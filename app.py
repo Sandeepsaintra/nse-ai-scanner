@@ -24,15 +24,15 @@ def calculate_rsi(data, window=14):
     return rsi
 
 # -------------------------------------------------------------------
-# 2. HYBRID SCORING ENGINE
+# 2. HYBRID SCORING ENGINE (Modified for Testing)
 # -------------------------------------------------------------------
 def bullish_reversal_score(rsi_today, rsi_yesterday, volume, avg_volume, close, ema_5, previous_high):
-    """Applies strict mandatory filters and calculates confirmation bonuses."""
-    # Step 1: Mandatory Filters
+    """Applies modified testing filters and calculates confirmation bonuses."""
+    # Step 1: Mandatory Filters (Volume lowered to 0.5 for testing)
     mandatory_pass = (
         rsi_today < 30
         and rsi_today > rsi_yesterday
-        and volume > avg_volume * 1.5
+        and volume > avg_volume * 0.5
     )
     if not mandatory_pass:
         return 0, "IGNORE"
