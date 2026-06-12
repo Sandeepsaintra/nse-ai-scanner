@@ -141,4 +141,128 @@ def run_five_layer_engine(stock_df, benchmark_df):
     aligned_bench = benchmark_df['CLOSE'].pct_change().dropna()
     combined = pd.concat([aligned_stock, aligned_bench], axis=1).dropna().iloc[-30:] # Last 30 sessions
     
-    if len(combined)
+    if len(combined) > 10:
+        covariance = np.cov(combined.iloc[:, 0], combined.iloc[:, 1])[0][1]
+        market_variance = np.var(combined.iloc[:, 1])
+        beta = covariance / (market_variance + 1e-9)
+    else:
+        beta = 1.0
+    l5_score = 1 if (l1_score >= 0 and beta > 1.1) or (l1_score < 0 and beta < 0.9) else 0
+
+    # --- AGGREGATION & STRATEGY ASSIGNMENT ---
+    total_score = l1_score + l2_score + l3_score + l4_score + l5_score
+    
+    if total_score >= 2:
+        action = "STRONG CALL"
+        stoploss = current_price - (1.8 * atr)
+        target = current_price + (2.5 * atr)
+    elif total_score == 1:
+        action = "MODERATE CALL"
+        stoploss = current_price - (1.5 * atr)
+        target = current_price + (2.0 * atr)
+    elif total_score <= -2:
+        action = "STRONG PUT"
+        stoploss = current_price + (1.8 * atr)
+        target = current_price - (2.5 * atr)
+    elif total_score == -1:
+        action = "MODERATE PUT"
+        stoploss = current_price + (1.5 * atr)
+        target = current_price - (2.0 * atr)
+    else:
+        action = "NEUTRAL / HOLD"
+        stoploss = 0.0
+        target = 0.0
+
+    return {
+        "Action": action,
+        "Price": round(current_price, 2),
+        "Score": total_score,
+        "RSI": round(current_rsi, 1) if not np.isnan(current_rsi) else 50.0,
+        "Beta": round(beta, 2),
+        "Stoploss": round(stoploss, 2),
+        "Target": round(target, 2)
+    }
+
+# =====================================================================
+# INTERFACE EXECUTION LAYER
+# =====================================================================
+st.title("🛡️ Institutional 5-Layer Options Decision Engine")
+
+st.subheader("🌐 Global Data Pipeline Diagnostics")
+col1, col2 = st.columns(2)
+
+with col1:
+    with st.spinner("Pinging yfinance backup matrix..."):
+        yf_status = verify_yfinance_api()
+    if yf_status == "YES":
+        st.success("**FIRST ENTRY:** yfinance Global Bridge ➔ **CONNECTED**")
+    else:
+        st.error("**FIRST ENTRY:** yfinance Global Bridge ➔ **OFFLINE**")
+
+with col2:
+    with st.spinner("Pinging National Stock Exchange Core API..."):
+        market_meta = get_detailed_market_status()
+    if market_meta["connected"]:
+        st.success(f"**SECOND ENTRY:** Direct Exchange API ➔ **CONNECTED**")
+    else:
+        st.error(f"**SECOND ENTRY:** Direct Exchange API ➔ **CONNECTION FAULT**")
+
+# --- CONTEXT-AWARE SYSTEM NOTIFICATIONS ---
+st.markdown("### 🗓️ Operational Market Intelligence Summary")
+if market_meta["connected"]:
+    if "CLOSED" in market_meta["status_text"] or "WEEKEND" in market_meta["status_text"]:
+        st.warning(f"**Current Status:** {market_meta['status_text']}")
+        st.info(f"💡 **Exchange Context:** {market_meta['details']}")
+        st.info("⚡ **Automation Routine:** System switched to **Historical Close Analysis Mode** using certified end-of-day reference blocks.")
+    else:
+        st.success(f"**Current Status:** {market_meta['status_text']}")
+        st.info(f"📈 **Exchange Context:** {market_meta['details']}")
+
+st.markdown("---")
+
+# --- SYSTEM EXECUTION CONTROL ---
+if yf_status == "YES" and market_meta["connected"]:
+    st.markdown("### 📊 Multi-Factor Derivatives Matrix")
+    
+    if st.button("🚀 Run Institutional 5-Layer Analytical Scan"):
+        watch_list = ["RELIANCE", "SBIN", "TCS", "INFY", "TATAMOTORS", "ITC", "BHARTIARTL", "HDFCBANK"]
+        compiled_matrix = []
+        
+        with st.spinner("Fetching baseline market matrices..."):
+            nifty_df = get_cleaned_data("^NSEI")
+            
+        if nifty_df is not None:
+            with st.spinner("Compiling multi-layer asset vectors through quantitative processing core..."):
+                for asset in watch_list:
+                    stock_data = get_cleaned_data(f"{asset}.NS")
+                    if stock_data is not None and len(stock_data) >= 50:
+                        analysis = run_five_layer_engine(stock_data, nifty_df)
+                        analysis["Symbol"] = asset
+                        compiled_matrix.append(analysis)
+                        
+            if compiled_matrix:
+                df_display = pd.DataFrame(compiled_matrix)
+                ordered_cols = ["Symbol", "Action", "Price", "Score", "RSI", "Beta", "Stoploss", "Target"]
+                
+                # Dynamic Visual Styling Matrix
+                def color_actions(val):
+                    if "STRONG CALL" in str(val): return 'background-color: #2ecc71; color: white; font-weight: bold;'
+                    if "MODERATE CALL" in str(val): return 'background-color: #a3e4d7; color: black;'
+                    if "STRONG PUT" in str(val): return 'background-color: #e74c3c; color: white; font-weight: bold;'
+                    if "MODERATE PUT" in str(val): return 'background-color: #f9e79f; color: black;'
+                    return 'color: gray;'
+
+                # Style map processing matrix
+                try:
+                    styled_df = df_display[ordered_cols].style.map(color_actions, subset=['Action'])
+                except AttributeError:
+                    styled_df = df_display[ordered_cols].style.applymap(color_actions, subset=['Action'])
+                    
+                st.dataframe(styled_df, use_container_width=True)
+                st.success("Mathematical execution models finalized across all operational asset files.")
+            else:
+                st.error("Processing Stopped: Insufficient historical vector rows found across target watchlist.")
+        else:
+            st.error("Data Extraction Failed: Could not fetch Nifty baseline reference parameters.")
+else:
+    st.warning("🚨 Execution Interlock: Scanner processing disabled until connection diagnostics clear.")
