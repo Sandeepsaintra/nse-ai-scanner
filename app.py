@@ -1,62 +1,33 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+from nselib import equity_data  # Ensure you have run: pip install nselib
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="Data Source Diagnostic")
+st.title("🔍 Data Source Verification")
 
-# =====================================================================
-# CORE ENGINE: FIXED & DEBUGGED
-# =====================================================================
-def get_stock_data(symbol):
-    # Fetch data
-    df = yf.download(symbol, period="1y", interval="1d", progress=False)
-    
-    # Debug: Check if data is empty
-    if df.empty:
-        return None
-        
-    # Flatten MultiIndex if present
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    
-    # Ensure columns exist
-    required = ['Open', 'High', 'Low', 'Close', 'Volume']
-    if not all(col in df.columns for col in required):
-        return None
-        
-    return df.copy()
-
-def run_scanner():
-    watch_list = ["RELIANCE.NS", "SBIN.NS", "TCS.NS", "INFY.NS"]
-    results = []
-    
-    for s in watch_list:
-        df = get_stock_data(s)
-        if df is not None and len(df) > 50:
-            # Simple calculation for test
-            close = float(df['Close'].iloc[-1])
-            atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
-            
-            results.append({
-                "Symbol": s.split('.')[0],
-                "Price": round(close, 2),
-                "Entry": round(close, 2),
-                "Stoploss": round(close - (1.5 * atr), 2),
-                "Target": round(close + (3.0 * atr), 2)
-            })
+if st.button("Check API Connectivity"):
+    # 1. Test yfinance
+    st.write("---")
+    st.subheader("Testing yfinance (Yahoo)")
+    try:
+        df_yf = yf.download("^NSEI", period="1mo", progress=False)
+        if not df_yf.empty:
+            st.success(f"yfinance is working. Received {len(df_yf)} rows.")
         else:
-            st.warning(f"Could not retrieve valid data for {s}")
-            
-    return pd.DataFrame(results)
+            st.error("yfinance returned an empty DataFrame.")
+    except Exception as e:
+        st.error(f"yfinance failed: {e}")
 
-# =====================================================================
-# INTERFACE
-# =====================================================================
-st.title("🛡️ Institutional Engine")
-
-if st.button("🚀 Run Scan"):
-    df_final = run_scanner()
-    if not df_final.empty:
-        st.dataframe(df_final)
-    else:
-        st.error("Scanner returned no data. Check your internet connection or ticker symbols.")
+    # 2. Test nselib (Official NSE Source)
+    st.subheader("Testing nselib (Official NSE)")
+    try:
+        # Fetching recent data
+        df_nse = equity_data.equity_history(symbol='RELIANCE', series='EQ', 
+                                            start_date='01-06-2026', end_date='12-06-2026')
+        if not df_nse.empty:
+            st.success(f"nselib is working. Received {len(df_nse)} rows.")
+        else:
+            st.error("nselib returned no data.")
+    except Exception as e:
+        st.error(f"nselib failed: {e}")
