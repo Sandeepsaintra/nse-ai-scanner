@@ -1,33 +1,39 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-from nselib import equity_data  # Ensure you have run: pip install nselib
+from nselib import equity_data
 
-st.set_page_config(layout="wide", page_title="Data Source Diagnostic")
-st.title("🔍 Data Source Verification")
+st.set_page_config(layout="wide", page_title="Professional NSE Scanner")
 
-if st.button("Check API Connectivity"):
-    # 1. Test yfinance
-    st.write("---")
-    st.subheader("Testing yfinance (Yahoo)")
+def fetch_nse_data(symbol):
     try:
-        df_yf = yf.download("^NSEI", period="1mo", progress=False)
-        if not df_yf.empty:
-            st.success(f"yfinance is working. Received {len(df_yf)} rows.")
-        else:
-            st.error("yfinance returned an empty DataFrame.")
+        # nselib fetches official historical data
+        # 'period' is not available here, we use dates
+        df = equity_data.equity_history(symbol=symbol.split('.')[0], 
+                                        series='EQ', 
+                                        start_date='01-05-2026', 
+                                        end_date='13-06-2026')
+        if df is None or df.empty:
+            return None
+        # Convert columns to numeric for calculation
+        df['CLOSE'] = pd.to_numeric(df['CLOSE_PRICE'])
+        return df
     except Exception as e:
-        st.error(f"yfinance failed: {e}")
+        st.error(f"Error fetching {symbol}: {e}")
+        return None
 
-    # 2. Test nselib (Official NSE Source)
-    st.subheader("Testing nselib (Official NSE)")
-    try:
-        # Fetching recent data
-        df_nse = equity_data.equity_history(symbol='RELIANCE', series='EQ', 
-                                            start_date='01-06-2026', end_date='12-06-2026')
-        if not df_nse.empty:
-            st.success(f"nselib is working. Received {len(df_nse)} rows.")
-        else:
-            st.error("nselib returned no data.")
-    except Exception as e:
-        st.error(f"nselib failed: {e}")
+st.title("🛡️ Professional NSE Scanner (Powered by nselib)")
+
+if st.button("🚀 Run Official NSE Scan"):
+    watch_list = ["RELIANCE", "SBIN", "TCS"]
+    results = []
+    
+    for s in watch_list:
+        df = fetch_nse_data(s)
+        if df is not None:
+            price = df['CLOSE'].iloc[-1]
+            results.append({"Symbol": s, "Close": price})
+        
+    if results:
+        st.dataframe(pd.DataFrame(results))
+    else:
+        st.error("No data retrieved.")
