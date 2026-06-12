@@ -7,68 +7,90 @@ from datetime import datetime, timedelta
 st.set_page_config(layout="wide", page_title="Institutional NSE Analytics Engine")
 
 # =====================================================================
-# DATA EXTRACTION LAYER
+# API GATEWAY LAYER (VERIFICATION SIGNALS)
 # =====================================================================
-def get_nifty_macro():
-    """Downloads macro tracking metrics via stable indices."""
+def verify_yfinance_api():
+    """Checks the health and uptime of the Yahoo Finance data stream."""
     try:
-        df = yf.download("^NSEI", period="1mo", interval="1d", progress=False)
-        if df.empty:
-            return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df.copy()
+        # Fetching index proxy data to test raw connectivity
+        df = yf.download("^NSEI", period="5d", interval="1d", progress=False)
+        if df is None or df.empty:
+            return "NO"
+        return "YES"
     except Exception:
-        return None
+        return "NO"
 
-def get_equity_history(symbol):
-    """Fetches historical market metrics using robust date tracking parameters."""
+def verify_nse_exchange_api():
+    """Checks the health and uptime of the direct NSE settlement/data gateway."""
     try:
-        # Calculate strict date bounds to guarantee consistent structural delivery
-        # Fetching ~50 days of data ensures reliable SMA and ATR computation windows
         end_dt = datetime.now()
-        start_dt = end_dt - timedelta(days=50)
+        start_dt = end_dt - timedelta(days=10)
         
-        str_end = end_dt.strftime('%d-%m-%Y')
-        str_start = start_dt.strftime('%d-%m-%Y')
+        # Test pull using a highly liquid reference asset (RELIANCE)
+        df = capital_market.price_volume_data(
+            symbol="RELIANCE", 
+            from_date=start_dt.strftime('%d-%m-%Y'), 
+            to_date=end_dt.strftime('%d-%m-%Y')
+        )
+        if df is None or df.empty:
+            return "NO"
+        return "YES"
+    except Exception:
+        return "NO"
+
+# =====================================================================
+# CORE HISTORICAL RETRIEVAL LAYER
+# =====================================================================
+def get_equity_history(symbol):
+    """Fetches full analytical data array from the verified exchange gateway."""
+    try:
+        end_dt = datetime.now()
+        start_dt = end_dt - timedelta(days=50) # Generates ~35 trading sessions
         
-        # Swapping out 'period' parameter for explicit date matrices
-        df = capital_market.price_volume_data(symbol=symbol, from_date=str_start, to_date=str_end)
-        
+        df = capital_market.price_volume_data(
+            symbol=symbol, 
+            from_date=start_dt.strftime('%d-%m-%Y'), 
+            to_date=end_dt.strftime('%d-%m-%Y')
+        )
         if df is None or df.empty:
             return None
             
         df.columns = [str(col).strip().upper() for col in df.columns]
         
-        # Explicit data sanitization layer
-        df['CLOSE_PRICE'] = pd.to_numeric(df['CLOSE_PRICE'], errors='coerce')
-        df['HIGH_PRICE'] = pd.to_numeric(df['HIGH_PRICE'], errors='coerce')
-        df['LOW_PRICE'] = pd.to_numeric(df['LOW_PRICE'], errors='coerce')
+        # Cross-build layout mapping matrix
+        rename_map = {
+            'CLOSE_PRICE': 'CLOSE', 'CLOSEPRICE': 'CLOSE',
+            'HIGH_PRICE': 'HIGH', 'HIGHPRICE': 'HIGH',
+            'LOW_PRICE': 'LOW', 'LOWPRICE': 'LOW'
+        }
+        df = df.rename(columns=rename_map)
         
-        df = df.dropna(subset=['CLOSE_PRICE', 'HIGH_PRICE', 'LOW_PRICE'])
-        return df.copy()
+        # Enforce technical float matrix types
+        df['CLOSE'] = pd.to_numeric(df['CLOSE'], errors='coerce')
+        df['HIGH'] = pd.to_numeric(df['HIGH'], errors='coerce')
+        df['LOW'] = pd.to_numeric(df['LOW'], errors='coerce')
+        
+        return df.dropna(subset=['CLOSE', 'HIGH', 'LOW'])
     except Exception:
         return None
 
 # =====================================================================
-# QUANTITATIVE PROCESSING ENGINE
+# QUANTITATIVE SCORING ENGINE
 # =====================================================================
-def analyze_asset(stock_df, macro_df):
-    """Applies structural analysis logic to raw data blocks."""
-    close_series = stock_df['CLOSE_PRICE']
+def analyze_asset(stock_df):
+    """Processes pricing data to generate option strategies and volatility guards."""
+    close_series = stock_df['CLOSE']
     current_price = float(close_series.iloc[-1])
     
-    # Simple Moving Average computation
     sma20 = float(close_series.rolling(min(20, len(close_series))).mean().iloc[-1])
     
-    # Core Volatility Matrix
-    highs = stock_df['HIGH_PRICE']
-    lows = stock_df['LOW_PRICE']
+    # ATR Volatility Core
+    highs = stock_df['HIGH']
+    lows = stock_df['LOW']
     atr = float((highs - lows).rolling(min(14, len(stock_df))).mean().iloc[-1])
     if atr <= 0: 
-        atr = current_price * 0.01  # Safe fallback default metrics
-    
-    # Target and strategy generation
+        atr = current_price * 0.01 # Volatility baseline override
+        
     if current_price > sma20:
         action = "CALL"
         stoploss = current_price - (1.5 * atr)
@@ -89,28 +111,55 @@ def analyze_asset(stock_df, macro_df):
     }
 
 # =====================================================================
-# DASHBOARD INTERFACE
+# INTERFACE EXECUTION LAYER
 # =====================================================================
-st.title("🛡️ Institutional Multi-Layer Analytics Matrix")
+st.title("🛡️ Institutional Multi-Layer Analytics Engine")
 
-if st.button("🚀 Run System Integration Scan"):
-    with st.spinner("Accessing direct exchange data infrastructure..."):
-        macro_data = get_nifty_macro()
-        
+# --- STEP 1 & 2: VERIFICATION PANELS VIA LIVE STREAM STATUS ---
+st.subheader("🌐 Core Channel Gateways STATUS")
+col1, col2 = st.columns(2)
+
+with col1:
+    with st.spinner("Checking yfinance channel..."):
+        yf_status = verify_yfinance_api()
+    if yf_status == "YES":
+        st.success("**FIRST ENTRY:** yfinance API Connection ➔ **YES**")
+    else:
+        st.error("**FIRST ENTRY:** yfinance API Connection ➔ **NO**")
+
+with col2:
+    with st.spinner("Checking Exchange data stream..."):
+        # Note: In the Indian ecosystem context, the direct market price feed matches the NSE data pool
+        nse_status = verify_nse_exchange_api()
+    if nse_status == "YES":
+        st.success("**SECOND ENTRY:** Direct Exchange Data Stream ➔ **YES**")
+    else:
+        st.error("**SECOND ENTRY:** Direct Exchange Data Stream ➔ **NO**")
+
+st.markdown("---")
+
+# --- STEP 3 & 4: CONDITIONAL LINKING PIPELINE ---
+if yf_status == "YES" and nse_status == "YES":
+    st.info("⚡ **System Status:** All production pipelines are linked. Quantitative Matrix Enabled.")
+    
+    if st.button("🚀 Run Institutional Matrix Scan"):
         watch_list = ["RELIANCE", "SBIN", "TCS", "INFY", "TATAMOTORS", "ITC"]
         compiled_matrix = []
         
-        for asset in watch_list:
-            stock_data = get_equity_history(asset)
-            if stock_data is not None and len(stock_data) > 0:
-                analysis = analyze_asset(stock_data, macro_data)
-                analysis["Symbol"] = asset
-                compiled_matrix.append(analysis)
-                
-        if compiled_matrix:
-            df_display = pd.DataFrame(compiled_matrix)
-            ordered_cols = ["Symbol", "Action", "Entry", "Stoploss", "Target 1", "Target 2"]
-            st.dataframe(df_display[ordered_cols], use_container_width=True)
-            st.success("Matrix calculations computed from verified sources.")
-        else:
-            st.error("Data tracking returned empty matrix parameters. Verify source channel uptime.")
+        with st.spinner("Compiling asset vectors through structural data pool..."):
+            for asset in watch_list:
+                stock_data = get_equity_history(asset)
+                if stock_data is not None and len(stock_data) > 0:
+                    analysis = analyze_asset(stock_data)
+                    analysis["Symbol"] = asset
+                    compiled_matrix.append(analysis)
+                    
+            if compiled_matrix:
+                df_display = pd.DataFrame(compiled_matrix)
+                ordered_cols = ["Symbol", "Action", "Entry", "Stoploss", "Target 1", "Target 2"]
+                st.dataframe(df_display[ordered_cols], use_container_width=True)
+                st.success("Option Matrix calculated successfully from institutional feeds.")
+            else:
+                st.error("Matrix execution halted: Core data blocks missing variables.")
+else:
+    st.warning("🚨 **System Status:** Scanner disabled. One or more external data bridges are offline.")
