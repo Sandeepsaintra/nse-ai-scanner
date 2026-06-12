@@ -35,12 +35,15 @@ def get_market_bias(nifty_df):
 def calculate_rs_score(stock_df, nifty_df):
     stock_close = stock_df['Close']
     nifty_close = nifty_df['Close']
+    
     s_ret_5d = ((stock_close.iloc[-1] - stock_close.iloc[-6]) / stock_close.iloc[-6]) * 100
     n_ret_5d = ((nifty_close.iloc[-1] - nifty_close.iloc[-6]) / nifty_close.iloc[-6]) * 100
     rs_5d = s_ret_5d - n_ret_5d
+    
     s_ret_21d = ((stock_close.iloc[-1] - stock_close.iloc[-22]) / stock_close.iloc[-22]) * 100
     n_ret_21d = ((nifty_close.iloc[-1] - nifty_close.iloc[-22]) / nifty_close.iloc[-22]) * 100
     rs_21d = s_ret_21d - n_ret_21d
+    
     rs_5d_score = 10 if rs_5d > 2 else (5 if rs_5d > 0 else 0)
     rs_21d_score = 20 if rs_21d > 5 else (10 if rs_21d > 0 else 0)
     return rs_5d_score + rs_21d_score
@@ -235,13 +238,10 @@ if st.button("🚀 Run Multi-Factor Matrix Scan"):
                 
         if compiled_data:
             df_display = pd.DataFrame(compiled_data)
-            
-            # This order brings the targets directly to the front!
             column_order = ["Symbol", "Action", "Score", "Entry", "Stoploss", "Target 1", "Target 2", "RS", "Trend", "Momentum", "Volume", "PA", "News", "Event"]
             df_display = df_display[column_order]
             
             st.subheader("📊 Layer 2-5: Strategy Selection Matrix")
-            # This line forces the table to stretch across the full width of the screen
             st.dataframe(df_display, use_container_width=True)
         else:
             st.error("🛑 No data was generated for the table. Please check the warnings above.")
