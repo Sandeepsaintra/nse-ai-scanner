@@ -264,4 +264,4 @@ if st.button("🚀 Run Multi-Factor Matrix Scan"):
             df_display = df_display[column_order]
             
             st.subheader("📊 Layer 2-5: Strategy Selection Matrix")
-            st.dataframe(df_display.style.background_gradient(cmap="RdYlGn", subset=["Score"]))
+            st.dataframe(df_display)
