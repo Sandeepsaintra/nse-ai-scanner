@@ -1,41 +1,40 @@
-import streamlit as st
-import pandas as pd
-import yfinance as yf
-
-# Nifty 50 Tickers
-NIFTY_50 = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "SBIN.NS", "LT.NS", "AXISBANK.NS"]
-
-def get_signal(ticker):
-    df = yf.download(ticker, period="3mo", progress=False)
-    if df.empty: return None
-    
-    # Standardize Column Names
-    df.columns = [c.upper() for c in df.columns]
+def engine_technical(df, ticker):
+    """Calculates Trend, Volume Confirmation, SL, and Targets"""
+    # Ensure data is numeric
+    df = df.apply(pd.to_numeric, errors='coerce')
     
     close = df['CLOSE'].iloc[-1]
     ema20 = df['CLOSE'].ewm(span=20).mean().iloc[-1]
     ema50 = df['CLOSE'].ewm(span=50).mean().iloc[-1]
-    atr = (df['HIGH'] - df['LOW']).rolling(14).mean().iloc[-1]
     
-    # Logic: CALL (Uptrend) vs PUT (Downtrend)
-    if close > ema20 and ema20 > ema50:
-        bias = "CALL (BUY)"
+    # 1. Volume Confirmation Logic
+    # Calculate 20-period Moving Average of Volume
+    df['VOL_SMA_20'] = df['VOLUME'].rolling(window=20).mean()
+    current_vol = df['VOLUME'].iloc[-1]
+    avg_vol = df['VOL_SMA_20'].iloc[-1]
+    vol_confirm = current_vol > avg_vol
+    
+    # 2. Risk Management (ATR)
+    atr = get_atr(df)
+    
+    # 3. Decision Logic (Bias + Volume Confirmation)
+    if close > ema20 and ema20 > ema50 and vol_confirm:
+        bias = "BUY (CALL)"
         sl = round(close - (1.5 * atr), 2)
-        return {"Symbol": ticker.replace(".NS", ""), "Bias": bias, "Entry": round(close, 2), "SL": sl, "T1": round(close + (1.5*atr), 2), "T2": round(close + (2.5*atr), 2)}
-    elif close < ema20 and ema20 < ema50:
-        bias = "PUT (BUY)"
+        target = round(close + (2.5 * atr), 2)
+    elif close < ema20 and ema20 < ema50 and vol_confirm:
+        bias = "SELL (PUT)"
         sl = round(close + (1.5 * atr), 2)
-        return {"Symbol": ticker.replace(".NS", ""), "Bias": bias, "Entry": round(close, 2), "SL": sl, "T1": round(close - (1.5*atr), 2), "T2": round(close - (2.5*atr), 2)}
-    return None
-
-st.title("🛡️ Institutional Signal Generator")
-if st.button("🚀 Scan for Calls & Puts"):
-    results = []
-    for ticker in NIFTY_50:
-        sig = get_signal(ticker)
-        if sig: results.append(sig)
-    
-    if results:
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
+        target = round(close - (2.5 * atr), 2)
     else:
-        st.warning("No stocks currently satisfy the Call/Put trend criteria.")
+        bias = "HOLD"
+        sl, target = 0, 0
+        
+    return {
+        "Symbol": ticker.replace(".NS", ""), 
+        "Bias": bias,
+        "Entry": round(close, 2), 
+        "SL": sl, 
+        "Target": target,
+        "Vol_Confirmed": vol_confirm
+    }
