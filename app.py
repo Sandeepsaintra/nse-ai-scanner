@@ -10,7 +10,6 @@ st.set_page_config(layout="wide", page_title="Institutional Derivatives Workstat
 # =====================================================================
 # SYSTEM CONFIGURATION & AUTOMATED MARKET BASKET
 # =====================================================================
-# Dynamically tracking highly liquid institutional targets across sectors
 DYNAMIC_MARKET_BASKET = [
     "RELIANCE", "SBIN", "TCS", "INFY", "TATAMOTORS", "ITC", "HDFCBANK", "ICICIBANK",
     "BHARTIARTL", "LT", "AXISBANK", "KOTAKBANK", "HINDUNILVR", "MARUTI", "BAJFINANCE"
@@ -37,7 +36,7 @@ def apply_sebi_footer():
 # =====================================================================
 # ARMORED PARALLELIZED BATCH DOWNLOAD & CLEANING LAYER
 # =====================================================================
-@st.cache_data(ttl=120)  # Reduced cache TTL to 2 minutes for tighter market tracking
+@st.cache_data(ttl=120)
 def download_all_market_data():
     """Executes a single cached, multi-threaded batch request to eliminate API rate limiting."""
     try:
@@ -88,41 +87,95 @@ def calculate_wilder_rsi(series, period=14):
     return 100.0 - (100.0 / (1.0 + rs))
 
 # =====================================================================
-# AUTOMATED INDICATOR RECOGNITION & ALGORITHMIC MATCHING ENGINE
+# INSTITUTIONAL WEIGHTED QUANT SCORE MATRIX ENGINE
 # =====================================================================
-def process_trading_workstation_logic(stock_df, asset_name):
+def process_trading_workstation_logic(stock_df, market_regime, asset_name):
     close = stock_df['CLOSE']
     high = stock_df['HIGH']
     low = stock_df['LOW']
+    vol = stock_df['VOLUME']
     current_price = float(close.iloc[-1])
     
-    # --- CALCULATE INDICATORS ---
-    ema20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
-    rsi_series = calculate_wilder_rsi(close, 14)
-    current_rsi = rsi_series.iloc[-1]
-    
-    # --- INSTITUTIONAL ATR FOR PROTECTIVE BANDS ---
+    # --- 1. TRUE WILDER SMOOTHING ATR MATRIX ---
     tr1 = high - low
     tr2 = (high - close.shift(1)).abs()
     tr3 = (low - close.shift(1)).abs()
     true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = true_range.rolling(window=14).mean().iloc[-1]
+    # Applied true Welles Wilder smoothing via exponential moving average alpha weights
+    atr_series = true_range.ewm(alpha=1.0/14, adjust=False).mean()
+    atr = atr_series.iloc[-1]
     if atr <= 0 or np.isnan(atr): 
         atr = current_price * 0.015
 
-    # --- STRICT SYSTEMATIC SIGNAL MATRICES ---
-    # Buy Criterion: Price > EMA20 and RSI shows building long momentum without being overbought
-    is_bullish_setup = (current_price > ema20) and (45 < current_rsi < 70)
+    # --- 2. TECHNICAL DATA COMPILING ---
+    ema20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
+    rsi_series = calculate_wilder_rsi(close, 14)
+    current_rsi = rsi_series.iloc[-1]
+    prev_rsi = rsi_series.iloc[-2]
     
-    # Short Criterion: Price < EMA20 and RSI shows cascading short momentum without being oversold
-    is_bearish_setup = (current_price < ema20) and (30 < current_rsi < 55)
+    avg_volume = vol.rolling(20).mean().iloc[-1]
+    current_volume = vol.iloc[-1]
 
-    if not (is_bullish_setup or is_bearish_setup):
-        return None  # Filtered out: Stock does not meet the necessary technical requirements
+    # --- 3. CORE QUANT FACTOR MULTI-SCORING ENGINE (0-100 SCALE) ---
+    factor_trend_score = 0.0
+    factor_rsi_score = 0.0
+    factor_volume_score = 0.0
+    factor_regime_score = 0.0
+    factor_atr_score = 0.0
 
-    # --- ASSIGN BIAS DIRECTION & PRICE METRICS ---
-    if is_bullish_setup:
-        bias_direction = "🟢 BUY / LONG"
+    # Determinate Core Asset Bias
+    asset_bias = "BULLISH" if current_price > ema20 else "BEARISH"
+
+    # FACTOR A: Trend Intensity Factor (Weight: 30%)
+    price_to_ema_pct = abs(current_price - ema20) / (ema20 + 1e-9)
+    factor_trend_score = min(100, (price_to_ema_pct * 1000)) * 0.30
+
+    # FACTOR B: RSI Momentum Trajectory Factor (Weight: 25%)
+    if asset_bias == "BULLISH":
+        if 45 < current_rsi < 70 and current_rsi > prev_rsi:
+            factor_rsi_score = 100.0 * 0.25
+        elif current_rsi >= 70: # Overbought structural dampener
+            factor_rsi_score = 40.0 * 0.25
+    else:
+        if 30 < current_rsi < 55 and current_rsi < prev_rsi:
+            factor_rsi_score = 100.0 * 0.25
+        elif current_rsi <= 30: # Oversold structural dampener
+            factor_rsi_score = 40.0 * 0.25
+
+    # FACTOR C: Volume Surge Velocity Factor (Weight: 20%)
+    if current_volume > avg_volume:
+        vol_ratio = current_volume / (avg_volume + 1e-9)
+        factor_volume_score = min(100.0, (vol_ratio * 50.0)) * 0.20
+
+    # FACTOR D: Macro Regime Pure Alignment Factor (Weight: 15%)
+    if asset_bias == market_regime:
+        factor_regime_score = 100.0 * 0.15
+
+    # FACTOR E: Volatility ATR Expansion Velocity Factor (Weight: 10%)
+    prev_atr_5d = atr_series.iloc[-6:-1].mean() if len(atr_series) >= 6 else atr
+    if atr > prev_atr_5d:
+        factor_atr_score = 100.0 * 0.10
+
+    # Total Mathematical Factor Aggregation
+    composite_signal_score = (
+        factor_trend_score + 
+        factor_rsi_score + 
+        factor_volume_score + 
+        factor_regime_score + 
+        factor_atr_score
+    )
+
+    # --- 4. STRICT HIGH-CONVICTION SELECTION CRITERIA FILTER ---
+    # Enforcing institutional macro execution filter + volume surge requirement + composite alpha limit
+    is_macro_aligned = (asset_bias == market_regime)
+    is_volume_confirmed = (current_volume > avg_volume)
+    
+    if (composite_signal_score < 70.0) or (not is_macro_aligned) or (not is_volume_confirmed):
+        return None
+
+    # --- 5. RISK ARCHITECTURE CALCULATION MATRIX ---
+    if asset_bias == "BULLISH":
+        action_signal = "🟢 BUY / LONG"
         entry_buffer = current_price * 0.002
         entry_min = current_price - entry_buffer
         entry_max = current_price + entry_buffer
@@ -130,7 +183,7 @@ def process_trading_workstation_logic(stock_df, asset_name):
         t1 = current_price + (atr * 1.5)
         t2 = current_price + (atr * 3.0)
     else:
-        bias_direction = "🔴 SELL / SHORT"
+        action_signal = "🔴 SELL / SHORT"
         entry_buffer = current_price * 0.002
         entry_min = current_price + entry_buffer
         entry_max = current_price - entry_buffer
@@ -138,7 +191,7 @@ def process_trading_workstation_logic(stock_df, asset_name):
         t1 = current_price - (atr * 1.5)
         t2 = current_price - (atr * 3.0)
 
-    # --- POSITION SIZING CALCULATOR (₹1,00,000 Cap, Max ₹1,000 Risk) ---
+    # Position Sizing Module (₹1,00,000 Capital Limit Floor, Max ₹1,000 Risk Base)
     stop_loss_dist = abs(current_price - stop_loss)
     capital_limit_qty = int(100000 / current_price)
     risk_qty = int(1000 / (stop_loss_dist + 1e-9))
@@ -146,9 +199,11 @@ def process_trading_workstation_logic(stock_df, asset_name):
 
     return {
         "Symbol": asset_name,
+        "Signal Score": round(composite_signal_score, 1),
+        "Action Signal": action_signal,
         "Current Price": round(current_price, 2),
-        "Action Signal": bias_direction,
         "RSI (14)": round(current_rsi, 1),
+        "Vol Surge": f"{round((current_volume / avg_volume), 2)}x",
         "Entry Min": round(entry_min, 2),
         "Entry Max": round(entry_max, 2),
         "Stop Loss": round(stop_loss, 2),
@@ -182,40 +237,44 @@ if batch_data is not None and nifty_raw is not None and bn_raw is not None:
     nifty_last = nifty_raw['CLOSE'].iloc[-1]
     nifty_ema = nifty_raw['CLOSE'].ewm(span=20, adjust=False).mean().iloc[-1]
     
+    # Establish Pure Macro Structural Regime Variable for Filter Alignment
+    market_regime = "BULLISH" if nifty_last > nifty_ema else "BEARISH"
+    
     st.markdown("### 🌐 Market Status Regime")
     with st.container(border=True):
-        regime_status = "🟢 BULLISH CONTINUATION" if nifty_last > nifty_ema else "🔴 BEARISH STRUCTURAL DOWNGRADE"
+        regime_status = "🟢 BULLISH CONTINUATION" if market_regime == "BULLISH" else "🔴 BEARISH STRUCTURAL DOWNGRADE"
         st.write(f"**Market Regime (Nifty 50):** {regime_status}")
         st.write(f"• **Risk Limit Profile:** Capital Ceiling = ₹1,00,000 | Max Risk Limit Per Trade = 1% (₹1,000)")
 
     st.markdown("---")
     
-    # --- SCAN TRIGGER WITH ALGORITHMIC SIGNAL MATCHING ---
-    if st.button("🚀 Run Market Scanner (Filter Active Signals Only)", use_container_width=True):
-        with st.spinner("Analyzing data frameworks for indicator requirements..."):
+    # --- SCAN TRIGGER WITH QUANTFACTOR SCORING BALANCES ---
+    if st.button("🚀 Run Institutional Multi-Factor Score Scan", use_container_width=True):
+        with st.spinner("Executing structural quantitative scoring equations..."):
             processed_setups = []
             for stock in DYNAMIC_MARKET_BASKET:
                 stock_raw = extract_ticker_dataframe(batch_data, f"{stock}.NS")
                 if stock_raw is not None and len(stock_raw) >= 50:
-                    setup_data = process_trading_workstation_logic(stock_raw, stock)
-                    if setup_data is not None:  # Only append if indicators met requirements
+                    setup_data = process_trading_workstation_logic(stock_raw, market_regime, stock)
+                    if setup_data is not None:
                         processed_setups.append(setup_data)
 
-            # Save calculations directly to session state
             if processed_setups:
-                st.session_state.scan_results = pd.DataFrame(processed_setups)
+                df_unsorted = pd.DataFrame(processed_setups)
+                # Sort absolute highest composite alpha score opportunity assets directly to the top
+                st.session_state.scan_results = df_unsorted.sort_values(by="Signal Score", ascending=False)
             else:
-                st.session_state.scan_results = pd.DataFrame()  # Empty dataframe if no setups pass
+                st.session_state.scan_results = pd.DataFrame()
             st.session_state.last_scan_time = datetime.now()
 
     # --- PERSISTENT RENDERING MATRIX ---
     if st.session_state.scan_results is not None:
         if st.session_state.scan_results.empty:
-            st.warning("⚠️ No stocks currently meet the indicator requirements for a high-probability Buy or Sell setup.")
+            st.warning("⚠️ No tracked stocks currently match the ≥70.0 Composite Score matrix requirements with Volume/Regime alignment.")
         else:
             col_title, col_time = st.columns([3, 1])
             with col_title:
-                st.markdown("### 📊 Active Tactical Execution Matrix")
+                st.markdown("### 📊 Active Tactical Execution Matrix (Sorted by Factor Strength)")
             with col_time:
                 if st.session_state.last_scan_time:
                     formatted_time = st.session_state.last_scan_time.strftime('%d-%b-%Y %H:%M:%S')
@@ -224,6 +283,7 @@ if batch_data is not None and nifty_raw is not None and bn_raw is not None:
             st.dataframe(
                 st.session_state.scan_results,
                 column_config={
+                    "Signal Score": st.column_config.NumberColumn(format="%.1f pts"),
                     "Current Price": st.column_config.NumberColumn(format="₹%.2f"),
                     "RSI (14)": st.column_config.NumberColumn(format="%.1f"),
                     "Entry Min": st.column_config.NumberColumn(format="₹%.2f"),
