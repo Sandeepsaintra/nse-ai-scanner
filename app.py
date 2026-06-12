@@ -10,6 +10,7 @@ st.set_page_config(layout="wide", page_title="Professional Option Scanner")
 # LAYER 1: MARKET BIAS ENGINE
 # =====================================================================
 def get_market_bias(nifty_df):
+    """Determines macro trend alignment using the Nifty 50 Index."""
     try:
         close = nifty_df["Close"]
         ema20 = close.ewm(span=20, adjust=False).mean()
@@ -190,6 +191,7 @@ st.sidebar.header("⚙️ Scanner Configurations")
 mode_toggle = st.sidebar.radio("Risk Horizon Mode", ["Aggressive Mode (ATR 14)", "Conservative Mode (ATR 20)"])
 atr_len = 14 if "ATR 14" in mode_toggle else 20
 
+# Add your preferred stocks here (ensure they have the .NS extension for NSE)
 watch_list = ["RELIANCE.NS", "SBIN.NS", "TCS.NS", "INFY.NS", "TATAMOTORS.NS", "ITC.NS", "HCLTECH.NS"]
 
 if st.button("🚀 Run Multi-Factor Matrix Scan"):
@@ -198,7 +200,7 @@ if st.button("🚀 Run Multi-Factor Matrix Scan"):
         # Check Nifty Data First
         nifty_raw = yf.download("^NSEI", period="2y", interval="1d", progress=False)
         if nifty_raw.empty:
-            st.error("🚨 CRITICAL ERROR: Could not download Nifty 50 data from yfinance. Check your internet connection or yfinance server status.")
+            st.error("🚨 CRITICAL ERROR: Could not download Nifty 50 data from yfinance.")
             st.stop()
             
         if isinstance(nifty_raw.columns, pd.MultiIndex):
@@ -227,7 +229,7 @@ if st.button("🚀 Run Multi-Factor Matrix Scan"):
             metrics = score_stock(raw_stock, nifty_raw, m_bias, atr_len)
             
             if metrics == "NOT_ENOUGH_DATA":
-                st.warning(f"⚠️ Warning: Not enough historical days found for {asset} to calculate a 200-day moving average.")
+                st.warning(f"⚠️ Warning: Not enough historical days found for {asset}.")
                 continue
             elif metrics:
                 metrics["Symbol"] = asset.split('.')[0]
@@ -237,6 +239,8 @@ if st.button("🚀 Run Multi-Factor Matrix Scan"):
             df_display = pd.DataFrame(compiled_data)
             column_order = ["Symbol", "Action", "Score", "RS", "Trend", "Momentum", "Volume", "PA", "Entry", "Stoploss", "Target 1", "Target 2"]
             df_display = df_display[column_order]
-            st.dataframe(df_display)
+            
+            # The 'use_container_width=True' stretches the table so Target 1 & 2 are visible
+            st.dataframe(df_display, use_container_width=True)
         else:
             st.error("🛑 No data was generated for the table. Please check the warnings above.")
