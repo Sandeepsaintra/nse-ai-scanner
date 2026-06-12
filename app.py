@@ -260,8 +260,8 @@ if st.button("🚀 Run Multi-Factor Matrix Scan"):
         # Format and display dashboard results matrix
         if compiled_data:
             df_display = pd.DataFrame(compiled_data)
-            column_order = ["Symbol", "Action", "Score", "RS", "Trend", "Momentum", "Volume", "PA", "News", "Event", "Entry", "Stoploss", "Target 1", "Target 2"]
-            df_display = df_display[column_order]
+                       column_order = ["Symbol", "Action", "Score", "Entry", "Stoploss", "Target 1", "Target 2", "RS", "Trend", "Momentum", "Volume", "PA"]
+   df_display = df_display[column_order]
             
             st.subheader("📊 Layer 2-5: Strategy Selection Matrix")
             st.dataframe(df_display, use_container_width=True)
