@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 from nselib import capital_market
-import numpy as np
+from datetime import datetime, timedelta
 
 st.set_page_config(layout="wide", page_title="Institutional NSE Analytics Engine")
 
@@ -22,20 +22,30 @@ def get_nifty_macro():
         return None
 
 def get_equity_history(symbol):
-    """Fetches high-integrity historical market metrics from official NSE data pool."""
+    """Fetches historical market metrics using robust date tracking parameters."""
     try:
-        # Utilizing official capital_market module for strict asset validation
-        df = capital_market.price_volume_data(symbol=symbol, period='1M')
+        # Calculate strict date bounds to guarantee consistent structural delivery
+        # Fetching ~50 days of data ensures reliable SMA and ATR computation windows
+        end_dt = datetime.now()
+        start_dt = end_dt - timedelta(days=50)
+        
+        str_end = end_dt.strftime('%d-%m-%Y')
+        str_start = start_dt.strftime('%d-%m-%Y')
+        
+        # Swapping out 'period' parameter for explicit date matrices
+        df = capital_market.price_volume_data(symbol=symbol, from_date=str_start, to_date=str_end)
+        
         if df is None or df.empty:
             return None
             
         df.columns = [str(col).strip().upper() for col in df.columns]
+        
+        # Explicit data sanitization layer
         df['CLOSE_PRICE'] = pd.to_numeric(df['CLOSE_PRICE'], errors='coerce')
         df['HIGH_PRICE'] = pd.to_numeric(df['HIGH_PRICE'], errors='coerce')
         df['LOW_PRICE'] = pd.to_numeric(df['LOW_PRICE'], errors='coerce')
-        df['TTL_TRD_QNTY'] = pd.to_numeric(df['TTL_TRD_QNTY'], errors='coerce')
         
-        df = df.dropna(subset=['CLOSE_PRICE'])
+        df = df.dropna(subset=['CLOSE_PRICE', 'HIGH_PRICE', 'LOW_PRICE'])
         return df.copy()
     except Exception:
         return None
@@ -44,19 +54,21 @@ def get_equity_history(symbol):
 # QUANTITATIVE PROCESSING ENGINE
 # =====================================================================
 def analyze_asset(stock_df, macro_df):
-    """Applies execution metrics to current asset states."""
+    """Applies structural analysis logic to raw data blocks."""
     close_series = stock_df['CLOSE_PRICE']
     current_price = float(close_series.iloc[-1])
     
-    # Mathematical models for indicators
-    sma20 = float(close_series.rolling(20).mean().iloc[-1]) if len(close_series) >= 20 else current_price
+    # Simple Moving Average computation
+    sma20 = float(close_series.rolling(min(20, len(close_series))).mean().iloc[-1])
     
-    # True range calculations for volatility structuring
+    # Core Volatility Matrix
     highs = stock_df['HIGH_PRICE']
     lows = stock_df['LOW_PRICE']
     atr = float((highs - lows).rolling(min(14, len(stock_df))).mean().iloc[-1])
+    if atr <= 0: 
+        atr = current_price * 0.01  # Safe fallback default metrics
     
-    # Strategy assignment logic
+    # Target and strategy generation
     if current_price > sma20:
         action = "CALL"
         stoploss = current_price - (1.5 * atr)
@@ -82,8 +94,7 @@ def analyze_asset(stock_df, macro_df):
 st.title("🛡️ Institutional Multi-Layer Analytics Matrix")
 
 if st.button("🚀 Run System Integration Scan"):
-    with st.spinner("Analyzing operational channels..."):
-        # Layer 1 Data Check
+    with st.spinner("Accessing direct exchange data infrastructure..."):
         macro_data = get_nifty_macro()
         
         watch_list = ["RELIANCE", "SBIN", "TCS", "INFY", "TATAMOTORS", "ITC"]
@@ -98,7 +109,6 @@ if st.button("🚀 Run System Integration Scan"):
                 
         if compiled_matrix:
             df_display = pd.DataFrame(compiled_matrix)
-            # Reorder columns for scannability
             ordered_cols = ["Symbol", "Action", "Entry", "Stoploss", "Target 1", "Target 2"]
             st.dataframe(df_display[ordered_cols], use_container_width=True)
             st.success("Matrix calculations computed from verified sources.")
