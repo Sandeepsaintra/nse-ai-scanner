@@ -176,4 +176,50 @@ if batch_data is not None and nifty_raw is not None and bn_raw is not None:
             for stock in WATCH_LIST:
                 stock_raw = extract_ticker_dataframe(batch_data, f"{stock}.NS")
                 if stock_raw is not None and len(stock_raw) >= 50:
-                    setup_
+                    setup_data = process_trading_workstation_logic(stock_raw, nifty_raw, stock)
+                    processed_setups.append(setup_data)
+
+            # Defensive structural check: prevent None assignment and update timestamp
+            if processed_setups:
+                st.session_state.scan_results = pd.DataFrame(processed_setups)
+                st.session_state.last_scan_time = datetime.now()
+            else:
+                st.session_state.scan_results = pd.DataFrame()
+                st.session_state.last_scan_time = datetime.now()
+
+    # --- DECOUPLED INDEPENDENT RENDERING MATRIX ---
+    if st.session_state.scan_results is not None:
+        if st.session_state.scan_results.empty:
+            st.warning("⚠️ No qualifying setups found across current asset indices.")
+        else:
+            col_title, col_time = st.columns([3, 1])
+            with col_title:
+                st.markdown("### 📊 Active Tactical Execution Matrix")
+            with col_time:
+                if st.session_state.last_scan_time:
+                    # Isolated strftime call to safely circumvent formatting exceptions
+                    formatted_time = st.session_state.last_scan_time.strftime('%d-%b-%Y %H:%M:%S')
+                    st.markdown(
+                        f"<p style='text-align: right; color: gray; padding-top: 10px;'>"
+                        f"⏱️ Last Scan: {formatted_time}</p>", 
+                        unsafe_html=True
+                    )
+            
+            st.dataframe(
+                st.session_state.scan_results,
+                column_config={
+                    "Current Price": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Entry Min": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Entry Max": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Stop Loss": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Target 1": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Target 2": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Suggested Qty": st.column_config.NumberColumn(format="%d Shares")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+else:
+    st.error("Pipeline Failure: Unable to clear market matrices.")
+
+apply_sebi_footer()
