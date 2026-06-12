@@ -264,4 +264,5 @@ if st.button("🚀 Run Multi-Factor Matrix Scan"):
             df_display = df_display[column_order]
             
             st.subheader("📊 Layer 2-5: Strategy Selection Matrix")
-st.dataframe(df_display, use_container_width=True)
+st            st.dataframe(df_display, use_container_width=True)
+
