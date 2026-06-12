@@ -3,42 +3,40 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-# ─────────────────────────────────────────────────────────────────────────────
-# UTILITIES
-# ─────────────────────────────────────────────────────────────────────────────
+# 1. SETUP UI
+st.set_page_config(layout="wide", page_title="Institutional Derivatives Workstation")
+st.title("🛡️ Institutional Derivatives Workstation v3.4")
+
+# 2. CALCULATION UTILITIES
 def calculate_trade_levels(entry, atr, bias):
-    # Dynamic risk based on 1.5x ATR
     risk = 1.5 * atr
     if bias == "LONG":
         return entry - risk, entry + (1.5 * risk), entry + (2.5 * risk)
     else:
         return entry + risk, entry - (1.5 * risk), entry - (2.5 * risk)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MAIN APP
-# ─────────────────────────────────────────────────────────────────────────────
-st.set_page_config(layout="wide", page_title="Institutional Derivatives Workstation")
-st.title("🛡️ Institutional Derivatives Workstation v3.3")
-
-# List of tickers to scan
+# 3. MAIN SCANNER
 tickers = ["RELIANCE.NS", "SBIN.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "AXISBANK.NS"]
 
 if st.button("🚀 Run Dynamic Scan"):
     with st.spinner("Downloading and processing market data..."):
-        # Fix: Using multi_level_index=False to avoid MultiIndex KeyErrors
-        raw_data = yf.download(tickers, period="2mo", progress=False, multi_level_index=False)
+        # Download data
+        raw_data = yf.download(tickers, period="3mo", group_by='ticker', progress=False)
         
-        # Standardize columns to uppercase to avoid case-sensitivity issues
-        raw_data.columns = [c.upper() for c in raw_data.columns]
-        
+        if raw_data.empty:
+            st.error("No data downloaded. Check your internet connection or ticker symbols.")
+            st.stop()
+            
         results = []
         
-        # Process each ticker
+        # Iterate through each ticker's individual DataFrame
         for ticker in tickers:
-            # Select columns for this specific ticker
-            # yfinance returns columns like 'OPEN', 'HIGH', etc., when multi_level_index=False
-            df = raw_data.xs(ticker, axis=1, level=1) if isinstance(raw_data.columns, pd.MultiIndex) else raw_data
+            df = raw_data[ticker].copy()
             
+            # Ensure columns are uppercase for safety
+            df.columns = [c.upper() for c in df.columns]
+            
+            # Need at least 20 days for EMA/ATR
             if len(df) < 20: continue
             
             # Calculate ATR
@@ -48,10 +46,11 @@ if st.button("🚀 Run Dynamic Scan"):
             ranges = pd.concat([high_low, high_close, low_close], axis=1)
             atr = ranges.max(axis=1).rolling(14).mean().iloc[-1]
             
-            # Simple Trend Filter
+            # Trend Filter
             ema20 = df['CLOSE'].ewm(span=20).mean().iloc[-1]
             close = df['CLOSE'].iloc[-1]
             
+            # SIGNAL LOGIC
             if close > ema20:
                 bias = "LONG"
                 sl, t1, t2 = calculate_trade_levels(close, atr, bias)
@@ -64,12 +63,12 @@ if st.button("🚀 Run Dynamic Scan"):
                     "Target 2": round(t2, 2)
                 })
 
-    # Render Table
-    if results:
-        st.subheader("📋 Trade Recommendations")
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
-        st.info("💡 Targets calculated using 14-day ATR volatility scaling.")
-    else:
-        st.warning("No signals found. Try adjusting the trend filter or ticker list.")
+        # 4. DISPLAY RESULTS
+        if results:
+            st.subheader("📋 Trade Recommendations")
+            st.dataframe(pd.DataFrame(results), use_container_width=True)
+            st.success(f"Scan complete. Found {len(results)} potential setups.")
+        else:
+            st.warning("No signals found. Try adding more tickers or relaxing trend criteria.")
 
-# 
+st.info("💡 Note: Targets are based on volatility-adjusted ATR levels.")
