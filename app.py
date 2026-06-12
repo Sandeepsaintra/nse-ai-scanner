@@ -155,6 +155,25 @@ with st.expander("🩺 System Infrastructure Diagnostics", expanded=False):
     nifty_raw = extract_ticker_dataframe(batch_data, "^NSEI") if batch_data is not None else None
     bn_raw = extract_ticker_dataframe(batch_data, "^NSEBANK") if batch_data is not None else None
     st.write(f"**Data Provider Integration:** {yfin_health}")
-    st.write(f"**Nifty 50 Buffer Status:** {'🟢 CONNECTED' if nifty_raw is not None else '🔴
+    st.write(f"**Nifty 50 Buffer Status:** {'🟢 CONNECTED' if nifty_raw is not None else '🔴 DISCONNECTED'}")
 
-apply_sebi_footer()
+if batch_data is not None and nifty_raw is not None and bn_raw is not None:
+    nifty_last = nifty_raw['CLOSE'].iloc[-1]
+    nifty_ema = nifty_raw['CLOSE'].ewm(span=20, adjust=False).mean().iloc[-1]
+    
+    st.markdown("### 🌐 Market Status Regime")
+    with st.container(border=True):
+        regime_status = "🟢 BULLISH CONTINUATION" if nifty_last > nifty_ema else "🔴 BEARISH STRUCTURAL DOWNGRADE"
+        st.write(f"**Market Regime:** {regime_status}")
+        st.write(f"• **Risk Limit Profile:** Capital Ceiling = ₹1,00,000 | Max Risk Limit Per Trade = 1% (₹1,000)")
+
+    st.markdown("---")
+    
+    # --- SCAN TRIGGER WITH PROFESSIONAL EXECUTION BLOCK ---
+    if st.button("🚀 Execute High-Conviction Watchlist Scan", use_container_width=True):
+        with st.spinner("Executing quantitative analysis scans..."):
+            processed_setups = []
+            for stock in WATCH_LIST:
+                stock_raw = extract_ticker_dataframe(batch_data, f"{stock}.NS")
+                if stock_raw is not None and len(stock_raw) >= 50:
+                    setup_
