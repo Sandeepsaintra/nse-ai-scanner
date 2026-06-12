@@ -1,166 +1,100 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
+For your scanner’s objective (1–10 trading day swing trades and options direction), I would choose ATR(14) as the default.
 
-# -------------------------------------------------------------------
-# 1. CORE DATA FUNCTIONS
-# -------------------------------------------------------------------
-def fetch_stock_data(ticker, period="3mo", interval="1d"):
-    """Downloads historical data from Yahoo Finance."""
-    stock_data = yf.download(tickers=ticker, period=period, interval=interval, progress=False)
-    return stock_data
+Why ATR(14)?
 
-def calculate_rsi(data, window=14):
-    """Calculates the 14-period Relative Strength Index."""
-    delta = data['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).dropna()
-    loss = (-delta.where(delta < 0, 0)).dropna()
-    
-    avg_gain = gain.ewm(com=window - 1, min_periods=window).mean()
-    avg_loss = loss.ewm(com=window - 1, min_periods=window).mean()
-    
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+✅ Faster adaptation to changing volatility
 
-# -------------------------------------------------------------------
-# 2. HYBRID SCORING ENGINE (Modified for Testing)
-# -------------------------------------------------------------------
-def bullish_reversal_score(rsi_today, rsi_yesterday, volume, avg_volume, close, ema_5, previous_high):
-    """Applies modified testing filters and calculates confirmation bonuses."""
-    # Step 1: Mandatory Filters (Volume lowered to 0.5 for testing)
-    mandatory_pass = (
-        rsi_today < 30
-        and rsi_today > rsi_yesterday
-        and volume > avg_volume * 0.5
-    )
-    if not mandatory_pass:
-        return 0, "IGNORE"
-        
-    # Step 2: Baseline Score
-    score = 75
-    
-    # Step 3: Bonus Points
-    if volume > avg_volume * 2:
-        score += 10
-    if close > ema_5:
-        score += 20
-    if close > previous_high:
-        score += 25
-        
-    # Step 4: Final Signal Classification
-    if score >= 110:
-        signal = "STRONG BUY"
-    elif score >= 90:
-        signal = "BUY"
-    else:
-        signal = "WATCHLIST"
-        
-    return score, signal
+✅ Industry standard (used widely across trading platforms)
 
-# -------------------------------------------------------------------
-# 3. STREAMLIT USER INTERFACE LAYOUT
-# -------------------------------------------------------------------
-st.set_page_config(page_title="NSE AI Scanner", layout="wide")
-st.title("🏹 Nifty Bullish Reversal AI Scanner")
-st.markdown("Scans Indian equities for high-probability oversold turning points using volume and price context.")
+✅ Better for breakout and momentum trades
 
-# Sidebar Configuration
-st.sidebar.header("Scan Settings")
-scan_mode = st.sidebar.selectbox(
-    "Select Scan Universe",
-    ["Nifty 50 Snippet", "Bank Nifty", "Custom"]
-)
+✅ Reacts quickly after earnings, news, or sector rotation
 
-# Determine Tickers based on selection
-if scan_mode == "Custom":
-    ticker_input = st.sidebar.text_area(
-        "Enter Tickers (comma separated)",
-        value="RELIANCE.NS, TCS.NS, INFY.NS"
-    )
-    tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
-elif scan_mode == "Bank Nifty":
-    tickers = ["SBIN.NS", "HDFCBANK.NS", "ICICIBANK.NS", "AXISBANK.NS", "KOTAKBANK.NS"]
-else:
-    tickers = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "LT.NS", "BHARTIARTL.NS", "TATAMOTORS.NS", "ITC.NS"]
+For example:
 
-# -------------------------------------------------------------------
-# 4. EXECUTION PIPELINE
-# -------------------------------------------------------------------
-if st.button("🚀 Run Market Scan"):
-    results = []
-    
-    with st.spinner(f"Processing {len(tickers)} assets..."):
-        progress_bar = st.progress(0)
-        
-        for i, ticker in enumerate(tickers):
-            try:
-                # Fetch & process
-                df = fetch_stock_data(ticker)
-                if len(df) < 20:
-                    continue
-                    
-                df['RSI'] = calculate_rsi(df)
-                
-                # Extract pipeline metrics via integer positions
-                volume = float(df['Volume'].iloc[-1])
-                avg_volume = float(df['Volume'].tail(20).mean())
-                close = float(df['Close'].iloc[-1])
-                ema_5 = float(df['Close'].ewm(span=5, adjust=False).mean().iloc[-1])
-                rsi_today = float(df['RSI'].iloc[-1])
-                rsi_yesterday = float(df['RSI'].iloc[-2])
-                previous_high = float(df['High'].iloc[-2])
-                
-                # Compute scoring
-                score, signal = bullish_reversal_score(
-                    rsi_today, rsi_yesterday, volume, avg_volume, 
-                    close, ema_5, previous_high
-                )
-                
-                # Filter out the noise
-                if signal != "IGNORE":
-                    results.append({
-                        "Symbol": ticker,
-                        "RSI": round(rsi_today, 2),
-                        "Volume Ratio": round(volume / avg_volume, 2),
-                        "Score": score,
-                        "Signal": signal
-                    })
-            except Exception as e:
-                st.sidebar.error(f"Skipped {ticker}: Structural error.")
-                
-            progress_bar.progress((i + 1) / len(tickers))
-        progress_bar.empty()
-        
-    # -------------------------------------------------------------------
-    # 5. RENDER RESULTS WITH COLOR CODING
-    # -------------------------------------------------------------------
-    if results:
-        dashboard_df = pd.DataFrame(results)
-        # Rank by highest score
-        dashboard_df = dashboard_df.sort_values(by="Score", ascending=False).reset_index(drop=True)
-        
-        # Color function for visual polish 🎨
-        def color_signal(val):
-            if val == "STRONG BUY":
-                return "background-color: #1ed760; color: black; font-weight: bold;"  # Vibrant Green
-            elif val == "BUY":
-                return "background-color: #a6e22e; color: black;"                    # Light Green
-            elif val == "WATCHLIST":
-                return "background-color: #ffe600; color: black;"                    # Bright Yellow
-            return ""
+* A stock like State Bank of India can move from low volatility to high volatility in a few sessions.
+* ATR(14) adjusts faster than ATR(20), helping stop-losses reflect current market conditions.
 
-        # Apply styling to the Signal column
-        styled_df = dashboard_df.style.map(color_signal, subset=["Signal"])
-        
-        # Timestamp for clarity 📅
-        st.success(f"Scan complete! Identified {len(dashboard_df)} trading setups.")
-        st.caption(f"Scan executed on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')} IST")
-        
-        # Render the polished table safely
-        try:
-            st.dataframe(styled_df, use_container_width=True)
-        except Exception:
-            st.write(styled_df)
-    else:
-        st.info("Scan complete. No setups met the mandatory bullish reversal criteria today.")
+⸻
+
+When ATR(20) is Better
+
+ATR(20) becomes useful when:
+
+* Trading positional swings (2–6 weeks)
+* Trading slower-moving large caps
+* Trying to reduce stop-loss changes from short-term volatility spikes
+
+The downside is that ATR(20) can react slowly when volatility suddenly expands.
+
+⸻
+
+My Recommendation
+
+Use a hybrid approach:
+
+ATR_PERIOD = 14
+
+for all calculations.
+
+Then display:
+
+Volatility Regime:
+LOW
+NORMAL
+HIGH
+
+based on ATR relative to its historical average.
+
+Example:
+
+RELIANCE
+Signal: CALL
+Score: 92
+ATR(14): 38.5
+Volatility: NORMAL
+Entry: 1490
+SL: 1432
+T1: 1567
+T2: 1644
+
+⸻
+
+Even Better for Version 2
+
+Add an advanced mode:
+
+Conservative Mode → ATR(20)
+Aggressive Mode → ATR(14)
+
+via a Streamlit sidebar toggle.
+
+This allows the same scanner to serve both:
+
+* Fast options traders
+* Slower swing traders
+
+without changing the underlying architecture.
+
+⸻
+
+One More Suggestion Before Coding News & Events
+
+I would not let news directly add +20 points.
+
+Instead:
+
+News Sentiment	Adjustment
+Strong Positive	+5
+Positive	+3
+Neutral	0
+Negative	-3
+Strong Negative	-5
+
+And keep Event Risk separate:
+
+⚠ Earnings in 1 Day
+⚠ RBI Policy Tomorrow
+⚠ Results This Week
+
+This prevents a stock from becoming a “Strong CALL” purely because of headlines while maintaining the integrity of your technical scoring engine. The technical score should remain the primary driver; news and events should increase or decrease confidence, not override the chart.
