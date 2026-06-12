@@ -4,7 +4,7 @@ import numpy as np
 import yfinance as yf
 from datetime import datetime
 
-# Enforce professional mobile-responsive baseline layout configuration
+# Enforce professional wide layout configuration
 st.set_page_config(layout="wide", page_title="Institutional Derivatives Workstation")
 
 # =====================================================================
@@ -12,6 +12,12 @@ st.set_page_config(layout="wide", page_title="Institutional Derivatives Workstat
 # =====================================================================
 WATCH_LIST = ["RELIANCE", "SBIN", "TCS", "INFY", "TATAMOTORS", "ITC", "HDFCBANK", "ICICIBANK"]
 TICKERS = ["^NSEI", "^NSEBANK"] + [f"{stock}.NS" for stock in WATCH_LIST]
+
+# Initialize Professional Session State Buffers
+if "scan_results" not in st.session_state:
+    st.session_state.scan_results = None
+if "last_scan_time" not in st.session_state:
+    st.session_state.last_scan_time = None
 
 # =====================================================================
 # SEBI COMPLIANT DISCLAIMER
@@ -98,8 +104,6 @@ def process_trading_workstation_logic(stock_df, nifty_df, asset_name):
         
     # --- TECHNICAL DATA GENERATION ---
     ema20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
-    rsi_series = calculate_wilder_rsi(close, 14)
-    rsi = rsi_series.iloc[-1]
     
     # --- DIRECT DIRECTIONAL BIAS ANALYSIS ---
     bias_direction = "🟢 BULLISH" if current_price > ema20 else "🔴 BEARISH"
@@ -134,29 +138,86 @@ def process_trading_workstation_logic(stock_df, nifty_df, asset_name):
         "Target 1": round(t1, 2),
         "Target 2": round(t2, 2),
         "Suggested Qty": suggested_equity_qty,
-        "Event Status": "🟢 Clean (No Event)"
+        "Event Status": "🟢 Clean"
     }
 
 # =====================================================================
-# UI LAYOUT FRAMEWORK (THE WORKSTATION FRONT-END)
+# UI LAYOUT FRAMEWORK
 # =====================================================================
 st.title("🛡️ Professional Trader Workstation")
 
-# Initialization step
+# Background download tracking
 batch_data = download_all_market_data()
 
-# --- HEALTH MONITOR PANEL ---
+# --- INFRASTRUCTURE HEALTH MONITOR PANEL ---
 with st.expander("🩺 System Infrastructure Diagnostics", expanded=False):
     yfin_health = "🟢 OPERATIONAL" if batch_data is not None and not batch_data.empty else "🔴 FETCH ERROR"
     nifty_raw = extract_ticker_dataframe(batch_data, "^NSEI") if batch_data is not None else None
     bn_raw = extract_ticker_dataframe(batch_data, "^NSEBANK") if batch_data is not None else None
-    
-    st.write(f"**Data Provider Integration (Yahoo Finance):** {yfin_health}")
+    st.write(f"**Data Provider Integration:** {yfin_health}")
     st.write(f"**Nifty 50 Buffer Status:** {'🟢 CONNECTED' if nifty_raw is not None else '🔴 DISCONNECTED'}")
-    st.write(f"**Bank Nifty Buffer Status:** {'🟢 CONNECTED' if bn_raw is not None else '🔴 DISCONNECTED'}")
 
 if batch_data is not None and nifty_raw is not None and bn_raw is not None:
     nifty_last = nifty_raw['CLOSE'].iloc[-1]
     nifty_ema = nifty_raw['CLOSE'].ewm(span=20, adjust=False).mean().iloc[-1]
     
-    # --- CARD 1: MACRO SYSTEM REG
+    st.markdown("### 🌐 Market Status Regime")
+    with st.container(border=True):
+        regime_status = "🟢 BULLISH CONTINUATION" if nifty_last > nifty_ema else "🔴 BEARISH STRUCTURAL DOWNGRADE"
+        st.write(f"**Market Regime:** {regime_status}")
+        st.write(f"• **Risk Limit Profile:** Capital Ceiling = ₹1,00,000 | Max Risk Limit Per Trade = 1% (₹1,000)")
+
+    st.markdown("---")
+    
+    # --- SCAN TRIGGER WITH PROFESSIONAL EXECUTION BLOCK ---
+    if st.button("🚀 Execute High-Conviction Watchlist Scan", use_container_width=True):
+        with st.spinner("Executing quantitative analysis scans..."):
+            processed_setups = []
+            for stock in WATCH_LIST:
+                stock_raw = extract_ticker_dataframe(batch_data, f"{stock}.NS")
+                if stock_raw is not None and len(stock_raw) >= 50:
+                    setup_data = process_trading_workstation_logic(stock_raw, nifty_raw, stock)
+                    processed_setups.append(setup_data)
+
+            # Defensive structural check: prevent None assignment and update timestamp
+            if processed_setups:
+                st.session_state.scan_results = pd.DataFrame(processed_setups)
+                st.session_state.last_scan_time = datetime.now()
+            else:
+                st.session_state.scan_results = pd.DataFrame()
+                st.session_state.last_scan_time = datetime.now()
+
+    # --- DECOUPLED INDEPENDENT RENDERING MATRIX ---
+    if st.session_state.scan_results is not None:
+        if st.session_state.scan_results.empty:
+            st.warning("⚠️ No qualifying setups found across current asset indices.")
+        else:
+            col_title, col_time = st.columns([3, 1])
+            with col_title:
+                st.markdown("### 📊 Active Tactical Execution Matrix")
+            with col_time:
+                if st.session_state.last_scan_time:
+                    st.markdown(
+                        f"<p style='text-align: right; color: gray; padding-top: 10px;'>"
+                        f"⏱️ Last Scan: {st.session_state.last_scan_time:%d-%b-%Y %H:%M:%S}</p>", 
+                        unsafe_html=True
+                    )
+            
+            st.dataframe(
+                st.session_state.scan_results,
+                column_config={
+                    "Current Price": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Entry Min": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Entry Max": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Stop Loss": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Target 1": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Target 2": st.column_config.NumberColumn(format="₹%.2f"),
+                    "Suggested Qty": st.column_config.NumberColumn(format="%d Shares")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+else:
+    st.error("Pipeline Failure: Unable to clear market matrices.")
+
+apply_sebi_footer()
