@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 
 st.set_page_config(layout="wide", page_title="Institutional NSE 5-Layer Engine")
 
@@ -128,4 +128,17 @@ def run_five_layer_engine(stock_df, benchmark_df):
     l2_score = 1 if (high.iloc[-1] - low.iloc[-1]) > (atr * 1.2) else 0
     
     # --- LAYER 3: VOLUME CONFIRMATION VECTOR ---
-    mean_volume = vol.rolling(window=20).
+    mean_volume = vol.rolling(window=20).mean().iloc[-1]
+    l3_score = 1 if vol.iloc[-1] > (mean_volume * 1.3) else 0
+    
+    # --- LAYER 4: RELATIVE MOMENTUM ---
+    rsi_series = calculate_rsi(close, 14)
+    current_rsi = rsi_series.iloc[-1]
+    l4_score = 1 if current_rsi > 55 else (-1 if current_rsi < 45 else 0)
+    
+    # --- LAYER 5: COVARIANCE MATRIX (BETA) ---
+    aligned_stock = close.pct_change().dropna()
+    aligned_bench = benchmark_df['CLOSE'].pct_change().dropna()
+    combined = pd.concat([aligned_stock, aligned_bench], axis=1).dropna().iloc[-30:] # Last 30 sessions
+    
+    if len(combined)
