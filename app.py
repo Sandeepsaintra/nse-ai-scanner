@@ -37,6 +37,7 @@ def calculate_rs_score(stock_df, nifty_df):
     stock_close = stock_df['Close']
     nifty_close = nifty_df['Close']
     
+    # Calculate percentage changes
     s_ret_5d = ((stock_close.iloc[-1] - stock_close.iloc[-6]) / stock_close.iloc[-6]) * 100
     n_ret_5d = ((nifty_close.iloc[-1] - nifty_close.iloc[-6]) / nifty_close.iloc[-6]) * 100
     rs_5d = s_ret_5d - n_ret_5d
@@ -45,6 +46,7 @@ def calculate_rs_score(stock_df, nifty_df):
     n_ret_21d = ((nifty_close.iloc[-1] - nifty_close.iloc[-22]) / nifty_close.iloc[-22]) * 100
     rs_21d = s_ret_21d - n_ret_21d
     
+    # Normalized Scoring
     rs_5d_score = 10 if rs_5d > 2 else (5 if rs_5d > 0 else 0)
     rs_21d_score = 20 if rs_21d > 5 else (10 if rs_21d > 0 else 0)
     
@@ -105,7 +107,7 @@ def calculate_volume_score(stock_df):
     return 0
 
 def calculate_price_action_score(stock_df, signal_type):
-    """Calculates 0-10 points based on confirmed breakouts/breakdowns."""
+    """Calculates 0-10 points based on confirmed daily resistance breakouts."""
     close_today = float(stock_df["Close"].iloc[-1])
     
     if signal_type == "CALL":
@@ -128,26 +130,31 @@ def score_stock(stock_df, nifty_df, market_bias, atr_period):
     if len(stock_df) < 250 or len(nifty_df) < 250:
         return None
         
+    # Clean up yfinance columns if multi-indexed
     if isinstance(stock_df.columns, pd.MultiIndex):
         stock_df.columns = stock_df.columns.get_level_values(0)
 
     close_series = stock_df['Close']
     
+    # Core technical computations
     stock_df['EMA20'] = close_series.ewm(span=20, adjust=False).mean()
     stock_df['EMA50'] = close_series.ewm(span=50, adjust=False).mean()
     stock_df['EMA200'] = close_series.ewm(span=200, adjust=False).mean()
     
+    # RSI
     delta = close_series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     stock_df['RSI'] = 100 - (100 / (1 + rs))
     
+    # MACD
     ema12 = close_series.ewm(span=12, adjust=False).mean()
     ema26 = close_series.ewm(span=26, adjust=False).mean()
     stock_df['MACD'] = ema12 - ema26
     stock_df['Signal_Line'] = stock_df['MACD'].ewm(span=9, adjust=False).mean()
     
+    # ATR Volatility Model
     high = stock_df['High']
     low = stock_df['Low']
     tr1 = high - low
@@ -156,6 +163,7 @@ def score_stock(stock_df, nifty_df, market_bias, atr_period):
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     atr = tr.rolling(window=atr_period).mean().iloc[-1]
     
+    # Evaluate Pathways
     results = {}
     for choice in ["CALL", "PUT"]:
         rs_pts = calculate_rs_score(stock_df, nifty_df)
@@ -166,6 +174,7 @@ def score_stock(stock_df, nifty_df, market_bias, atr_period):
         
         base_score = rs_pts + trend_pts + mom_pts + vol_pts + pa_pts
         
+        # Layer 3: Market Alignment
         if market_bias == "BULLISH":
             adjustment = 15 if choice == "CALL" else -20
         elif market_bias == "BEARISH":
@@ -176,9 +185,15 @@ def score_stock(stock_df, nifty_df, market_bias, atr_period):
         final_score = max(0, min(100, base_score + adjustment))
         results[choice] = (final_score, rs_pts, trend_pts, mom_pts, vol_pts, pa_pts, atr)
         
+    # Determine the winning strategy direction
     winning_signal = "CALL" if results["CALL"][0] >= results["PUT"][0] else "PUT"
     f_score, rs_s, trend_s, mom_s, vol_s, pa_s, final_atr = results[winning_signal]
     
+    # Layer 4: News/Catalyst Placeholder Values
+    news_status = "Neutral"
+    event_risk = "None"
+    
+    # Layer 4 Trade Engine Classification
     if f_score >= 90: action = f"STRONG {winning_signal}"
     elif f_score >= 75: action = winning_signal
     elif f_score >= 60: action = "WATCHLIST"
@@ -186,6 +201,7 @@ def score_stock(stock_df, nifty_df, market_bias, atr_period):
     
     current_price = float(close_series.iloc[-1])
     
+    # Layer 5: Risk Level Generation
     if winning_signal == "CALL":
         sl = current_price - (1.5 * final_atr)
         t1 = current_price + (2.0 * final_atr)
@@ -193,4 +209,59 @@ def score_stock(stock_df, nifty_df, market_bias, atr_period):
     else:
         sl = current_price + (1.5 * final_atr)
         t1 = current_price - (2.0 * final_atr)
-        t
+        t2 = current_price - (4.0 * final_atr)
+        
+    return {
+        "Score": f_score, "Action": action, "RS": rs_s, "Trend": trend_s,
+        "Momentum": mom_s, "Volume": vol_s, "PA": pa_s, "News": news_status,
+        "Event": event_risk, "Entry": round(current_price, 2), "Stoploss": round(sl, 2),
+        "Target 1": round(t1, 2), "Target 2": round(t2, 2)
+    }
+
+# =====================================================================
+# DASHBOARD INTERFACE
+# =====================================================================
+st.title("🛡️ Institutional 5-Layer Options Decision Engine")
+
+# Sidebar configurations
+st.sidebar.header("⚙️ Scanner Configurations")
+mode_toggle = st.sidebar.radio("Risk Horizon Mode", ["Aggressive Mode (ATR 14)", "Conservative Mode (ATR 20)"])
+atr_len = 14 if "ATR 14" in mode_toggle else 20
+
+watch_list = ["RELIANCE.NS", "SBIN.NS", "TCS.NS", "INFY.NS", "TATAMOTORS.NS", "ITC.NS", "HCLTECH.NS"]
+
+if st.button("🚀 Run Multi-Factor Matrix Scan"):
+    with st.spinner("Downloading structural index data and analyzing layers..."):
+        # Download Nifty 50 Index reference data
+        nifty_raw = yf.download("^NSEI", period="2y", interval="1d", progress=False)
+        if isinstance(nifty_raw.columns, pd.MultiIndex):
+            nifty_raw.columns = nifty_raw.columns.get_level_values(0)
+            
+        m_bias, m_conf = get_market_bias(nifty_raw)
+        
+        # Display Layer 1 Status Card
+        st.subheader("🌍 Layer 1: Market Macro Regime")
+        if m_bias == "BULLISH":
+            st.success(f"**MARKET BIAS:** {m_bias} ({m_conf}% Confidence) — Long setups preferred.")
+        elif m_bias == "BEARISH":
+            st.error(f"**MARKET BIAS:** {m_bias} ({m_conf}% Confidence) — Short setups preferred.")
+        else:
+            st.warning(f"**MARKET BIAS:** {m_bias} ({m_conf}% Confidence) — High index option volatility risk.")
+            
+        # Scan processing loops
+        compiled_data = []
+        for asset in watch_list:
+            raw_stock = yf.download(asset, period="2y", interval="1d", progress=False)
+            metrics = score_stock(raw_stock, nifty_raw, m_bias, atr_len)
+            if metrics:
+                metrics["Symbol"] = asset.split('.')[0]
+                compiled_data.append(metrics)
+                
+        # Format and display dashboard results matrix
+        if compiled_data:
+            df_display = pd.DataFrame(compiled_data)
+            column_order = ["Symbol", "Action", "Score", "RS", "Trend", "Momentum", "Volume", "PA", "News", "Event", "Entry", "Stoploss", "Target 1", "Target 2"]
+            df_display = df_display[column_order]
+            
+            st.subheader("📊 Layer 2-5: Strategy Selection Matrix")
+            st.dataframe(df_display.style.background_gradient(cmap="RdYlGn", subset=["Score"]))
