@@ -8,10 +8,14 @@ from datetime import datetime
 st.set_page_config(layout="wide", page_title="Institutional Derivatives Workstation")
 
 # =====================================================================
-# SYSTEM CONFIGURATION & DICTIONARIES
+# SYSTEM CONFIGURATION & AUTOMATED MARKET BASKET
 # =====================================================================
-WATCH_LIST = ["RELIANCE", "SBIN", "TCS", "INFY", "TATAMOTORS", "ITC", "HDFCBANK", "ICICIBANK"]
-TICKERS = ["^NSEI", "^NSEBANK"] + [f"{stock}.NS" for stock in WATCH_LIST]
+# Dynamically tracking highly liquid institutional targets across sectors
+DYNAMIC_MARKET_BASKET = [
+    "RELIANCE", "SBIN", "TCS", "INFY", "TATAMOTORS", "ITC", "HDFCBANK", "ICICIBANK",
+    "BHARTIARTL", "LT", "AXISBANK", "KOTAKBANK", "HINDUNILVR", "MARUTI", "BAJFINANCE"
+]
+TICKERS = ["^NSEI", "^NSEBANK"] + [f"{stock}.NS" for stock in DYNAMIC_MARKET_BASKET]
 
 # Initialize Professional Session State Buffers
 if "scan_results" not in st.session_state:
@@ -33,7 +37,7 @@ def apply_sebi_footer():
 # =====================================================================
 # ARMORED PARALLELIZED BATCH DOWNLOAD & CLEANING LAYER
 # =====================================================================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=120)  # Reduced cache TTL to 2 minutes for tighter market tracking
 def download_all_market_data():
     """Executes a single cached, multi-threaded batch request to eliminate API rate limiting."""
     try:
@@ -84,16 +88,20 @@ def calculate_wilder_rsi(series, period=14):
     return 100.0 - (100.0 / (1.0 + rs))
 
 # =====================================================================
-# INTEGRATED SCORING & FACTOR METRIC LAYER
+# AUTOMATED INDICATOR RECOGNITION & ALGORITHMIC MATCHING ENGINE
 # =====================================================================
-def process_trading_workstation_logic(stock_df, nifty_df, asset_name):
+def process_trading_workstation_logic(stock_df, asset_name):
     close = stock_df['CLOSE']
     high = stock_df['HIGH']
     low = stock_df['LOW']
-    vol = stock_df['VOLUME']
     current_price = float(close.iloc[-1])
     
-    # --- TRUE INSTITUTIONAL ATR CALCULATION ---
+    # --- CALCULATE INDICATORS ---
+    ema20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
+    rsi_series = calculate_wilder_rsi(close, 14)
+    current_rsi = rsi_series.iloc[-1]
+    
+    # --- INSTITUTIONAL ATR FOR PROTECTIVE BANDS ---
     tr1 = high - low
     tr2 = (high - close.shift(1)).abs()
     tr3 = (low - close.shift(1)).abs()
@@ -101,29 +109,37 @@ def process_trading_workstation_logic(stock_df, nifty_df, asset_name):
     atr = true_range.rolling(window=14).mean().iloc[-1]
     if atr <= 0 or np.isnan(atr): 
         atr = current_price * 0.015
-        
-    # --- TECHNICAL DATA GENERATION ---
-    ema20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
-    
-    # --- DIRECT DIRECTIONAL BIAS ANALYSIS ---
-    bias_direction = "🟢 BULLISH" if current_price > ema20 else "🔴 BEARISH"
 
-    # --- INDICATIVE ENTRY / DEFENSIVE INVALIDATIONS MATRIX ---
-    entry_buffer = current_price * 0.003
-    entry_min = current_price - entry_buffer
-    entry_max = current_price + entry_buffer
+    # --- STRICT SYSTEMATIC SIGNAL MATRICES ---
+    # Buy Criterion: Price > EMA20 and RSI shows building long momentum without being overbought
+    is_bullish_setup = (current_price > ema20) and (45 < current_rsi < 70)
     
-    stop_loss_dist = atr * 1.5
-    if current_price > ema20:
-        stop_loss = current_price - stop_loss_dist
-        t1 = current_price + stop_loss_dist
-        t2 = current_price + (stop_loss_dist * 2)
+    # Short Criterion: Price < EMA20 and RSI shows cascading short momentum without being oversold
+    is_bearish_setup = (current_price < ema20) and (30 < current_rsi < 55)
+
+    if not (is_bullish_setup or is_bearish_setup):
+        return None  # Filtered out: Stock does not meet the necessary technical requirements
+
+    # --- ASSIGN BIAS DIRECTION & PRICE METRICS ---
+    if is_bullish_setup:
+        bias_direction = "🟢 BUY / LONG"
+        entry_buffer = current_price * 0.002
+        entry_min = current_price - entry_buffer
+        entry_max = current_price + entry_buffer
+        stop_loss = current_price - (atr * 1.5)
+        t1 = current_price + (atr * 1.5)
+        t2 = current_price + (atr * 3.0)
     else:
-        stop_loss = current_price + stop_loss_dist
-        t1 = current_price - stop_loss_dist
-        t2 = current_price - (stop_loss_dist * 2)
+        bias_direction = "🔴 SELL / SHORT"
+        entry_buffer = current_price * 0.002
+        entry_min = current_price + entry_buffer
+        entry_max = current_price - entry_buffer
+        stop_loss = current_price + (atr * 1.5)
+        t1 = current_price - (atr * 1.5)
+        t2 = current_price - (atr * 3.0)
 
-    # --- POSITION SIZING CALCULATOR ---
+    # --- POSITION SIZING CALCULATOR (₹1,00,000 Cap, Max ₹1,000 Risk) ---
+    stop_loss_dist = abs(current_price - stop_loss)
     capital_limit_qty = int(100000 / current_price)
     risk_qty = int(1000 / (stop_loss_dist + 1e-9))
     suggested_equity_qty = max(1, min(capital_limit_qty, risk_qty))
@@ -131,22 +147,22 @@ def process_trading_workstation_logic(stock_df, nifty_df, asset_name):
     return {
         "Symbol": asset_name,
         "Current Price": round(current_price, 2),
-        "Bias Trend": bias_direction,
+        "Action Signal": bias_direction,
+        "RSI (14)": round(current_rsi, 1),
         "Entry Min": round(entry_min, 2),
         "Entry Max": round(entry_max, 2),
         "Stop Loss": round(stop_loss, 2),
         "Target 1": round(t1, 2),
         "Target 2": round(t2, 2),
-        "Suggested Qty": suggested_equity_qty,
-        "Event Status": "🟢 Clean"
+        "Suggested Qty": suggested_equity_qty
     }
 
 # =====================================================================
 # UI LAYOUT FRAMEWORK
 # =====================================================================
-st.title("🛡️ Professional Trader Workstation")
+st.title("🛡️ Institutional Derivatives Workstation")
 
-# FIXED: Global variable scope extraction outside layout UI expanders
+# Global variable scope extraction outside layout UI expanders
 batch_data = download_all_market_data()
 nifty_raw = extract_ticker_dataframe(batch_data, "^NSEI") if batch_data is not None else None
 bn_raw = extract_ticker_dataframe(batch_data, "^NSEBANK") if batch_data is not None else None
@@ -156,7 +172,6 @@ with st.expander("🩺 System Infrastructure Diagnostics", expanded=False):
     yfin_health = "🟢 OPERATIONAL" if batch_data is not None and not batch_data.empty else "🔴 FETCH ERROR"
     st.write(f"**Data Provider Integration:** {yfin_health}")
     
-    # Clean string literals split across multiline to prevent syntax errors
     nifty_status = "🟢 CONNECTED" if nifty_raw is not None else "🔴 DISCONNECTED"
     bn_status = "🟢 CONNECTED" if bn_raw is not None else "🔴 DISCONNECTED"
     
@@ -170,33 +185,33 @@ if batch_data is not None and nifty_raw is not None and bn_raw is not None:
     st.markdown("### 🌐 Market Status Regime")
     with st.container(border=True):
         regime_status = "🟢 BULLISH CONTINUATION" if nifty_last > nifty_ema else "🔴 BEARISH STRUCTURAL DOWNGRADE"
-        st.write(f"**Market Regime:** {regime_status}")
+        st.write(f"**Market Regime (Nifty 50):** {regime_status}")
         st.write(f"• **Risk Limit Profile:** Capital Ceiling = ₹1,00,000 | Max Risk Limit Per Trade = 1% (₹1,000)")
 
     st.markdown("---")
     
-    # --- SCAN TRIGGER WITH PROFESSIONAL EXECUTION BLOCK ---
-    if st.button("🚀 Execute High-Conviction Watchlist Scan", use_container_width=True):
-        with st.spinner("Executing quantitative analysis scans..."):
+    # --- SCAN TRIGGER WITH ALGORITHMIC SIGNAL MATCHING ---
+    if st.button("🚀 Run Market Scanner (Filter Active Signals Only)", use_container_width=True):
+        with st.spinner("Analyzing data frameworks for indicator requirements..."):
             processed_setups = []
-            for stock in WATCH_LIST:
+            for stock in DYNAMIC_MARKET_BASKET:
                 stock_raw = extract_ticker_dataframe(batch_data, f"{stock}.NS")
                 if stock_raw is not None and len(stock_raw) >= 50:
-                    setup_data = process_trading_workstation_logic(stock_raw, nifty_raw, stock)
-                    processed_setups.append(setup_data)
+                    setup_data = process_trading_workstation_logic(stock_raw, stock)
+                    if setup_data is not None:  # Only append if indicators met requirements
+                        processed_setups.append(setup_data)
 
-            # Defensive structural check: prevent None assignment and update timestamp
+            # Save calculations directly to session state
             if processed_setups:
                 st.session_state.scan_results = pd.DataFrame(processed_setups)
-                st.session_state.last_scan_time = datetime.now()
             else:
-                st.session_state.scan_results = pd.DataFrame()
-                st.session_state.last_scan_time = datetime.now()
+                st.session_state.scan_results = pd.DataFrame()  # Empty dataframe if no setups pass
+            st.session_state.last_scan_time = datetime.now()
 
-    # --- DECOUPLED INDEPENDENT RENDERING MATRIX ---
+    # --- PERSISTENT RENDERING MATRIX ---
     if st.session_state.scan_results is not None:
         if st.session_state.scan_results.empty:
-            st.warning("⚠️ No qualifying setups found across current asset indices.")
+            st.warning("⚠️ No stocks currently meet the indicator requirements for a high-probability Buy or Sell setup.")
         else:
             col_title, col_time = st.columns([3, 1])
             with col_title:
@@ -210,6 +225,7 @@ if batch_data is not None and nifty_raw is not None and bn_raw is not None:
                 st.session_state.scan_results,
                 column_config={
                     "Current Price": st.column_config.NumberColumn(format="₹%.2f"),
+                    "RSI (14)": st.column_config.NumberColumn(format="%.1f"),
                     "Entry Min": st.column_config.NumberColumn(format="₹%.2f"),
                     "Entry Max": st.column_config.NumberColumn(format="₹%.2f"),
                     "Stop Loss": st.column_config.NumberColumn(format="₹%.2f"),
