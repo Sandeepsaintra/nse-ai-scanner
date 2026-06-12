@@ -1,3 +1,31 @@
+"""
+╔══════════════════════════════════════════════════════════════════════════╗
+║      INSTITUTIONAL DERIVATIVES WORKSTATION  v3.0                        ║
+║      5-Engine Alpha Discovery | NSE F&O Universe | Swing + Options      ║
+╠══════════════════════════════════════════════════════════════════════════╣
+║  Engine A — Nifty Options Direction   (relaxed 4/5 threshold)           ║
+║  Engine B — Fresh Breakouts + Strong Trend mode  (scanner mode toggle)  ║
+║  Engine C — F&O Money Flow  (relative volume, tighter scoring)          ║
+║  Engine D — Institutional Relative Strength  (20-day RS vs Nifty)       ║
+║  Engine E — Event Risk Filter  (earnings / ex-div / corporate action)   ║
+║                                                                          ║
+║  Alpha Board — ranked composite score + position sizing                 ║
+╠══════════════════════════════════════════════════════════════════════════╣
+║  v3.0 CHANGES vs v2.0:                                                  ║
+║  Fix 1 — Engine A threshold relaxed: ce_met >= 4 fires BUY CE          ║
+║  Fix 2 — Breadth now uses EMA50 (less noisy, institutional proxy)       ║
+║  Fix 3 — Engine B scanner mode: Fresh Crossover OR Strong Trend         ║
+║  Fix 4 — Engine C: relative volume threshold lowered to 1.3×            ║
+║           scoring: vol_ratio*15 + price_acc*10 + rsi*0.2                ║
+║  Fix 5 — Sector strength map + 10-pt bonus per stock                    ║
+║  Fix 6 — Alpha Board: ranked by 0.60*B_score + 0.40*C_score            ║
+║  Fix 7 — Position sizing: capital input → risk 1% → qty per trade       ║
+║  Fix 8 — Full green/red table styling with color_signal()               ║
+║  New D  — RS Engine: stock 20d return − Nifty 20d return                ║
+║  New E  — Event risk: Yahoo calendar scrape → exclude risky names       ║
+╚══════════════════════════════════════════════════════════════════════════╝
+"""
+
 import streamlit as st
 import pandas as pd
 import numpy as np
