@@ -1,4 +1,4 @@
-import streamlit as st
+    import streamlit as st
 import yfinance as yf
 import pandas as pd
 
@@ -57,6 +57,7 @@ def bullish_reversal_score(rsi_today, rsi_yesterday, volume, avg_volume, close, 
         signal = "WATCHLIST"
         
     return score, signal
+
 # -------------------------------------------------------------------
 # 3. STREAMLIT USER INTERFACE LAYOUT
 # -------------------------------------------------------------------
@@ -149,20 +150,6 @@ if st.button("🚀 Run Market Scan"):
                 return "background-color: #ffe600; color: black;"                    # Bright Yellow
             return ""
 
-        # Apply styling to the Signal column
-        styled_df = dashboard_df.style.map(color_signal, subset=["Signal"])
-        
-        # Timestamp for clarity 📅
-        st.success(f"Scan complete! Identified {len(dashboard_df)} trading setups.")
-        st.caption(f"Scan executed on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')} IST")
-        
-        # Render the polished table safely
-        try:
-            st.dataframe(styled_df, use_container_width=True)
-        except Exception:
-            st.write(styled_df)
-    else:
-        st.info("Scan complete. No setups met the mandatory bullish reversal criteria today.")
         # Apply styling to the Signal column
         styled_df = dashboard_df.style.map(color_signal, subset=["Signal"])
         
