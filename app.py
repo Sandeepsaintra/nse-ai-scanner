@@ -146,16 +146,22 @@ def process_trading_workstation_logic(stock_df, nifty_df, asset_name):
 # =====================================================================
 st.title("🛡️ Professional Trader Workstation")
 
-# Background download tracking
+# FIXED: Global variable scope extraction outside layout UI expanders
 batch_data = download_all_market_data()
+nifty_raw = extract_ticker_dataframe(batch_data, "^NSEI") if batch_data is not None else None
+bn_raw = extract_ticker_dataframe(batch_data, "^NSEBANK") if batch_data is not None else None
 
 # --- INFRASTRUCTURE HEALTH MONITOR PANEL ---
 with st.expander("🩺 System Infrastructure Diagnostics", expanded=False):
     yfin_health = "🟢 OPERATIONAL" if batch_data is not None and not batch_data.empty else "🔴 FETCH ERROR"
-    nifty_raw = extract_ticker_dataframe(batch_data, "^NSEI") if batch_data is not None else None
-    bn_raw = extract_ticker_dataframe(batch_data, "^NSEBANK") if batch_data is not None else None
     st.write(f"**Data Provider Integration:** {yfin_health}")
-    st.write(f"**Nifty 50 Buffer Status:** {'🟢 CONNECTED' if nifty_raw is not None else '🔴 DISCONNECTED'}")
+    
+    # Clean string literals split across multiline to prevent syntax errors
+    nifty_status = "🟢 CONNECTED" if nifty_raw is not None else "🔴 DISCONNECTED"
+    bn_status = "🟢 CONNECTED" if bn_raw is not None else "🔴 DISCONNECTED"
+    
+    st.write(f"**Nifty 50 Buffer Status:** {nifty_status}")
+    st.write(f"**Bank Nifty Buffer Status:** {bn_status}")
 
 if batch_data is not None and nifty_raw is not None and bn_raw is not None:
     nifty_last = nifty_raw['CLOSE'].iloc[-1]
@@ -197,13 +203,8 @@ if batch_data is not None and nifty_raw is not None and bn_raw is not None:
                 st.markdown("### 📊 Active Tactical Execution Matrix")
             with col_time:
                 if st.session_state.last_scan_time:
-                    # Isolated strftime call to safely circumvent formatting exceptions
                     formatted_time = st.session_state.last_scan_time.strftime('%d-%b-%Y %H:%M:%S')
-                    st.markdown(
-                        f"<p style='text-align: right; color: gray; padding-top: 10px;'>"
-                        f"⏱️ Last Scan: {formatted_time}</p>", 
-                        unsafe_html=True
-                    )
+                    st.caption(f"⏱️ Last Scan: {formatted_time}")
             
             st.dataframe(
                 st.session_state.scan_results,
