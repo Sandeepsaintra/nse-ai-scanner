@@ -2,73 +2,58 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
+from datetime import datetime
 
-# 1. SETUP UI
-st.set_page_config(layout="wide", page_title="Institutional Derivatives Workstation")
-st.title("🛡️ Institutional Derivatives Workstation v3.4")
+# 1. Fundamental Cache (Runs only once a day)
+@st.cache_data(ttl=86400)
+def get_fundamental_score(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        roe = info.get('returnOnEquity', 0)
+        d_e = info.get('debtToEquity', 0)
+        # Quality Filter: ROE > 15% and Debt/Equity < 1.0
+        return (roe > 0.15) and (d_e < 1.0)
+    except:
+        return False
 
-# 2. CALCULATION UTILITIES
-def calculate_trade_levels(entry, atr, bias):
-    risk = 1.5 * atr
-    if bias == "LONG":
-        return entry - risk, entry + (1.5 * risk), entry + (2.5 * risk)
-    else:
-        return entry + risk, entry - (1.5 * risk), entry - (2.5 * risk)
-
-# 3. MAIN SCANNER
-tickers = ["RELIANCE.NS", "SBIN.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "AXISBANK.NS"]
-
-if st.button("🚀 Run Dynamic Scan"):
-    with st.spinner("Downloading and processing market data..."):
-        # Download data
-        raw_data = yf.download(tickers, period="3mo", group_by='ticker', progress=False)
+# 2. Main Scanner Logic
+def run_scan():
+    nifty_50 = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", 
+                "BHARTIARTL.NS", "SBIN.NS", "LT.NS", "HINDUNILVR.NS", "ITC.NS"]
+    
+    signals = []
+    for ticker in nifty_50:
+        # Check fundamentals first (will use cache if already run today)
+        if not get_fundamental_score(ticker):
+            continue
+            
+        df = yf.download(ticker, period="3mo", progress=False)
+        if df.empty: continue
         
-        if raw_data.empty:
-            st.error("No data downloaded. Check your internet connection or ticker symbols.")
-            st.stop()
+        # Flatten structure if MultiIndex
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
             
-        results = []
+        close = df['Close'].iloc[-1]
+        ema20 = df['Close'].ewm(span=20).mean().iloc[-1]
+        atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
         
-        # Iterate through each ticker's individual DataFrame
-        for ticker in tickers:
-            df = raw_data[ticker].copy()
-            
-            # Ensure columns are uppercase for safety
-            df.columns = [c.upper() for c in df.columns]
-            
-            # Need at least 20 days for EMA/ATR
-            if len(df) < 20: continue
-            
-            # Calculate ATR
-            high_low = df['HIGH'] - df['LOW']
-            high_close = np.abs(df['HIGH'] - df['CLOSE'].shift())
-            low_close = np.abs(df['LOW'] - df['CLOSE'].shift())
-            ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            atr = ranges.max(axis=1).rolling(14).mean().iloc[-1]
-            
-            # Trend Filter
-            ema20 = df['CLOSE'].ewm(span=20).mean().iloc[-1]
-            close = df['CLOSE'].iloc[-1]
-            
-            # SIGNAL LOGIC
-            if close > ema20:
-                bias = "LONG"
-                sl, t1, t2 = calculate_trade_levels(close, atr, bias)
-                results.append({
-                    "Symbol": ticker.replace(".NS", ""), 
-                    "Bias": bias,
-                    "Entry": round(close, 2), 
-                    "SL": round(sl, 2),
-                    "Target 1": round(t1, 2), 
-                    "Target 2": round(t2, 2)
-                })
+        if close > ema20:
+            signals.append({
+                "Symbol": ticker.replace(".NS", ""),
+                "Price": round(close, 2),
+                "Stop Loss": round(close - (1.5 * atr), 2),
+                "Target": round(close + (2.5 * atr), 2)
+            })
+    return signals
 
-        # 4. DISPLAY RESULTS
-        if results:
-            st.subheader("📋 Trade Recommendations")
-            st.dataframe(pd.DataFrame(results), use_container_width=True)
-            st.success(f"Scan complete. Found {len(results)} potential setups.")
+# 3. Streamlit Interface
+st.title("🛡️ Institutional Workstation: Fundamental-Trend Hybrid")
+if st.button("🚀 Run Optimized Scan"):
+    with st.spinner("Analyzing fundamentals and technical trends..."):
+        data = run_scan()
+        if data:
+            st.dataframe(pd.DataFrame(data), use_container_width=True)
         else:
-            st.warning("No signals found. Try adding more tickers or relaxing trend criteria.")
-
-st.info("💡 Note: Targets are based on volatility-adjusted ATR levels.")
+            st.warning("No fundamentally strong stocks found in an uptrend today.")
