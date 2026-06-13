@@ -1,40 +1,51 @@
-def engine_technical(df, ticker):
-    """Calculates Trend, Volume Confirmation, SL, and Targets"""
-    # Ensure data is numeric
-    df = df.apply(pd.to_numeric, errors='coerce')
-    
-    close = df['CLOSE'].iloc[-1]
-    ema20 = df['CLOSE'].ewm(span=20).mean().iloc[-1]
-    ema50 = df['CLOSE'].ewm(span=50).mean().iloc[-1]
-    
-    # 1. Volume Confirmation Logic
-    # Calculate 20-period Moving Average of Volume
-    df['VOL_SMA_20'] = df['VOLUME'].rolling(window=20).mean()
-    current_vol = df['VOLUME'].iloc[-1]
-    avg_vol = df['VOL_SMA_20'].iloc[-1]
-    vol_confirm = current_vol > avg_vol
-    
-    # 2. Risk Management (ATR)
-    atr = get_atr(df)
-    
-    # 3. Decision Logic (Bias + Volume Confirmation)
-    if close > ema20 and ema20 > ema50 and vol_confirm:
-        bias = "BUY (CALL)"
-        sl = round(close - (1.5 * atr), 2)
-        target = round(close + (2.5 * atr), 2)
-    elif close < ema20 and ema20 < ema50 and vol_confirm:
-        bias = "SELL (PUT)"
-        sl = round(close + (1.5 * atr), 2)
-        target = round(close - (2.5 * atr), 2)
-    else:
-        bias = "HOLD"
-        sl, target = 0, 0
+import os
+import time
+from datetime import datetime, timedelta
+import requests
+from io import StringIO
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import pandas as pd
+import pandas_ta as ta
+import yfinance as yf
+
+app = FastAPI()
+
+# Allow your React frontend to communicate with this backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- 1. NIFTY HEAVYWEIGHTS LIST ---
+TICKERS = [
+    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
+    "SBIN.NS", "BHARTIARTL.NS", "HINDUNILVR.NS", "ITC.NS", "BAJFINANCE.NS"
+]
+
+# --- 2. FII MACRO SENTIMENT ENGINE (NSE SCRAPER) ---
+def get_fii_sentiment():
+    try:
+        # NSE requires standard browser headers to prevent blocking
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br'
+        }
         
-    return {
-        "Symbol": ticker.replace(".NS", ""), 
-        "Bias": bias,
-        "Entry": round(close, 2), 
-        "SL": sl, 
-        "Target": target,
-        "Vol_Confirmed": vol_confirm
-    }
+        # Look back up to 5 days to find the most recent trading day's file
+        for days_back in range(0, 5):
+            date_str = (datetime.now() - timedelta(days=days_back)).strftime('%d%m%Y')
+            display_date = (datetime.now() - timedelta(days=days_back)).strftime('%d-%b-%Y')
+            
+            url = f"https://nsearchives.nseindia.com/content/nsccl/fao_participant_oi_{date_str}.csv"
+            
+            response = requests.get(url, headers=headers, timeout=5)
+            
+            if response.status_code == 200:
+                # Successfully found the file. Use thousands=',' to parse numbers cleanly.
+                df = pd.read_csv(StringIO(response.text), skiprows=1, thousands=',')
+                df.columns = df.columns.str.strip()
