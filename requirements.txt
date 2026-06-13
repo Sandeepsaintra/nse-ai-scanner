@@ -1,6 +1,7 @@
-streamlit
+fastapi
+uvicorn
 pandas
-numpy
-nselib
+pandas-ta
 yfinance
+requests
 
